@@ -34,7 +34,7 @@ Tailor suggestions to what's actually missing or stale — don't recite the full
 
 - **Logic throws, framework catches.** Tool/resource handlers are pure — throw on failure, no `try/catch`. Plain `Error` is fine; the framework catches, classifies, and formats. Use error factories (`notFound()`, `validationError()`, etc.) when the error code matters.
 - **Use `ctx.log`** for request-scoped logging. No `console` calls.
-- **Use `ctx.state`** for tenant-scoped storage. Never access persistence directly.
+- **Keep persistence in `CanvasService`** through its injected `core.storage`; tool handlers do not access storage directly.
 - **Need input the caller didn't supply?** `return ctx.requestInput(...)` and read `ctx.inputs` when the handler is re-entered. Never `await` for user input mid-handler.
 - **Secrets in env vars only** — never hardcoded.
 - **Cut noise.** Add only what earns its place: no speculative generality, no guards for states the framework already prevents (Zod-validated params, classified errors), no abstraction until a third caller proves it, no option nothing sets.
@@ -60,7 +60,7 @@ Tool files live in `src/mcp-server/tools/definitions/`. Nine tools are registere
 
 `src/index.ts` fixes DuckDB to 256 MiB engine memory, four canvases per tenant, a one-hour sliding TTL and a six-hour absolute cap. The service further enforces eight tables per canvas, eight canvases per process and a 30-minute table TTL. Engine memory is not total RSS or temporary-disk capacity.
 
-The portable MCPB fixes `CANVAS_PROVIDER_TYPE=none`. npm and Docker install the native dependency normally on supported platforms and permit `CANVAS_PROVIDER_TYPE=duckdb`. Keep those option sets distinct.
+`src/index.ts` also defaults `CANVAS_PROVIDER_TYPE` to `duckdb` once `parseConfig()` has loaded `.env`, so npm and Docker installs, which install the native dependency normally on supported platforms, stage by default; `none` disables staging. The portable MCPB fixes `CANVAS_PROVIDER_TYPE=none` because its bundle strips DuckDB's native bindings. Keep those option sets distinct.
 
 ### Identity and lifecycle
 
@@ -77,15 +77,11 @@ Handlers receive a unified `ctx` object. Key properties:
 | Property | Description |
 |:---------|:------------|
 | `ctx.log` | Request-scoped logger — `.debug()`, `.info()`, `.notice()`, `.warning()`, `.error()`. Auto-correlates requestId, traceId, tenantId. Dual-sink: Pino **and** `notifications/message` to the client, so treat it as client-visible. |
-| `ctx.state` | Tenant-scoped KV — `.get(key)`, `.set(key, value, { ttl? })`, `.delete(key)`, `.getMany(keys)`, `.list(prefix, { cursor, limit })`. Accepts any JSON-serializable value; reads return its JSON form (a `Date` comes back as an ISO string). |
-| `ctx.requestInput` | Suspend and ask the caller for more input — `return ctx.requestInput({ inputRequests: { key: inputRequired.elicit({ message, requestedSchema }) } })`. Never returns; the handler is re-entered with the answers. Always present. |
-| `ctx.inputs` | The request's responses — `.accepted(key, schema)`, `.view(key)`, `.state()`, `.dropped` — limited to what the client declared (`elicitation` and its form/url modes, `sampling`, `roots`). Client-supplied: a consent gate trusts only a `ctx.state` record it stored when it asked, bound to the operation, caller, and target (see the `api-context` skill). |
-| `ctx.clientCapabilities` | What the client declared for this request, `undefined` when no view exists. Decides whether to ask for optional context (e.g. roots); never a reason to skip a consent prompt. |
-| `ctx.enrich` | Success-path agent context (empty-result notices, query echo, pagination totals) — `ctx.enrich(...)` or `.notice()` / `.total()` / `.echo()` / `.truncated()`. Reaches `structuredContent` and `content[]`; lands only when the definition declares an `enrichment` block (no-op otherwise). |
-| `ctx.content` | Non-text content blocks — `.image(data, mimeType)`, `.audio(data, mimeType)`, or `ctx.content(block)` for a raw block. Prepended to `content[]` after `format()`; never enters `structuredContent`. |
-| `ctx.signal` | `AbortSignal` for cancellation. |
-| `ctx.requestId` | Request ID — the one every log record of the call carries and its error envelope returns as `data.requestId`. |
-| `ctx.tenantId` | Tenant ID from JWT; `'default'` for stdio or HTTP with auth off. |
+| `ctx.enrich` | Success-path agent context — `nasa_power_search_parameters` calls `.notice()` on an empty match. Reaches `structuredContent` and `content[]`; lands only when the definition declares an `enrichment` block (no-op otherwise). |
+| `ctx.signal` | `AbortSignal` for cancellation. Producing tools replace it with the call budget's signal, so the 55-second source deadline also aborts staging. |
+| `ctx.tenantId` | Tenant ID from JWT; `'default'` for stdio or HTTP with auth off. Canvas records are owned per tenant, and a token presented by another tenant is `canvas_not_found`. |
+
+Staged-table provenance is written through `core.storage` in `CanvasService`, keyed by tenant, canvas and table; no handler uses `ctx.state`.
 
 ---
 
@@ -230,11 +226,14 @@ When you complete a skill's checklist, check the boxes and add a completion time
 | `bun run format` | Auto-fix formatting (safe fixes only) |
 | `bun run format:unsafe` | Also apply Biome's unsafe autofixes — review the diff; they can change behavior |
 | `bun run test` | Run tests (Vitest — use `bun run test`, not `bun test`) |
+| `bun run test:coverage` | Run tests with coverage |
+| `bun run start` | Run the built server with the configured transport |
 | `bun run start:stdio` | Production mode (stdio) |
 | `bun run start:http` | Production mode (HTTP) |
 | `bun run changelog:build` | Regenerate `CHANGELOG.md` from `changelog/*.md` |
 | `bun run changelog:check` | Verify `CHANGELOG.md` is in sync (used by devcheck) |
 | `bun run bundle` | Build, pack, and clean a `.mcpb` for one-click Claude Desktop install |
+| `bun run release:github` | Create or repair the GitHub Release on the version tag and attach the `.mcpb` (run by `release-and-publish`) |
 | `bun run publish-mcp` | Authenticate with the macOS Keychain token and publish registry metadata |
 
 **CI is one file.** `.github/workflows/codeql.yml` (scaffolded) is the only GitHub Actions workflow: CodeQL is GitHub-owned end to end, and the file runs only while the repo's CodeQL *default setup* is turned off. Verification — `devcheck`, tests, the release gates — runs locally; don't add a workflow that re-runs it.
@@ -302,8 +301,11 @@ import { getMyService } from '@/services/my-domain/my-service.js';
 - [ ] Zod schemas: all fields have `.describe()`, only JSON-Schema-serializable types (no `z.custom()`, `z.date()`, `z.transform()`, `z.bigint()`, `z.symbol()`, `z.void()`, `z.map()`, `z.set()`, `z.function()`, `z.nan()`)
 - [ ] Optional nested objects: handler guards for empty inner values from form-based clients (`if (input.obj?.field && ...)`, not just `if (input.obj)`). When regex/length constraints matter, use `z.union([z.literal(''), z.string().regex(...).describe(...)])` — literal variants are exempt from `describe-on-fields`.
 - [ ] JSDoc `@fileoverview` + `@module` on every file
-- [ ] `ctx.log` for logging, `ctx.state` for storage
+- [ ] `ctx.log` for logging; persistence only through `CanvasService`
 - [ ] Handlers throw on failure — error factories or plain `Error`, no try/catch
+- [ ] New codes and presets are checked against the selected community/resolution dictionary; source units, fill-as-`null`, `omittedParameters` and annual-period distinctions survive normalization
+- [ ] Producing tools present through `CanvasService.present()`: oversized data stages completely or fails with `canvas_required` / `dataset_limit`, never a truncated source prefix
+- [ ] Workload bounds live in `POWER_LIMITS`; the four fixed canvas settings match across `src/index.ts`, `.env.example`, `server.json`, `manifest.json` and both plugin manifests
 - [ ] `format()` renders all data the LLM needs — different clients forward different surfaces (Claude Code → `structuredContent`, Claude Desktop → `content[]`); both must carry the same data
 - [ ] If wrapping external API: raw/domain/output schemas reviewed against real upstream sparsity/nullability before finalizing required vs optional fields
 - [ ] If wrapping external API: normalization and `format()` preserve uncertainty; do not fabricate facts from missing upstream data

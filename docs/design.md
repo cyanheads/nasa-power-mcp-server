@@ -40,16 +40,16 @@ Use JSON-Schema-serializable Zod schemas with descriptions on every field. Root 
 | `timeStandard` | `LST` default or `UTC`; echo actual response header; LST timestamps have no invented UTC offset |
 | `units` | `metric` default or `imperial`; report exact response units, with no implicit conversions |
 | `selection` | Discriminated union: `{ mode: 'preset', preset }` or `{ mode: 'parameters', parameters: string[] }`; default preset `solar_pv` |
-| `parameters` | Unique codes after normalization, 1–15 hourly or 1–20 otherwise, including correction codes added below; validate against the selected community/resolution dictionary |
+| `parameters` | Normalize and deduplicate in first-seen order; input arrays retain 1–15 hourly or 1–20 otherwise, including correction codes added below; validate against the selected community/resolution dictionary |
 | `siteElevation` | Optional finite meters; include `PSC` in the effective request when supplied |
-| `windElevation`, `windSurface` | Both supplied or both absent; height 10–300 m, canonical surface `grass` or `airportice` (documented supported subset); include `WSC` |
+| `windElevation`, `windSurface` | Both supplied or both absent; height 10–300 m; all 17 canonical NASA aliases listed by `wind_surfaces`, including `airportgrass`, `airportice` and `vegtype_1`; preserve vegetation underscores and include `WSC` |
 | `canvas_id` | Optional `CanvasIdSchema` on producers; required on dataframe tools; no implicit remembered canvas |
 
 Reject reversed windows. Hourly starts at 2001-01-01; daily/monthly meteorology starts in 1981. Solar starts in 1984, but do not pre-reject a mixed request merely because solar may be omitted upstream. Use configuration for the supported product window, not a guarantee of nonmissing observations. Permit requests through the current date/year even when recent observations are still fills; reject future dates/years. Bounds below are server workload limits, not claims about NASA restrictions.
 
 ### Presets
 
-The parameter dictionaries for all twelve `(RE|SB|AG) × (hourly|daily|monthly|climatology)` pairs were checked on 2026-10-19. All codes below are present in every pair except the two degree-day codes, which are absent hourly. Revalidate the selected expansion against the cached dictionary at runtime; a preset never silently drops an unavailable member.
+The parameter dictionaries for all twelve `(RE|SB|AG) × (hourly|daily|monthly|climatology)` pairs were checked on 2026-10-19. Degree-day codes and `T2M_MAX`/`T2M_MIN` are absent hourly; the expansions below retain that distinction. Revalidate the selected expansion against the cached dictionary at runtime; a preset never silently drops an unavailable member.
 
 | Preset | Exact parameter expansion | Supported resolutions |
 |:--|:--|:--|
@@ -57,9 +57,10 @@ The parameter dictionaries for all twelve `(RE|SB|AG) × (hourly|daily|monthly|c
 | `wind_turbine` | `WS10M`, `WS50M`, `T2M` | All four |
 | `building_hvac` | `T2M`, `RH2M`, `HDD18_3`, `CDD18_3` | Daily, monthly, climatology |
 | `agroclimatology` | `T2M`, `PRECTOTCORR`, `GWETROOT`, `GWETPROF`, `ALLSKY_SFC_SW_DWN` | All four |
+| `agroclimatology` additions | `T2M_MAX`, `T2M_MIN` | Daily, monthly, climatology |
 | `water_balance` | `PRECTOTCORR`, `EVPTRNS`, `GWETROOT`, `GWETPROF` | All four |
 
-`water_balance` groups related measurements; it does not subtract evapotranspiration energy flux from precipitation. Their units are incompatible. A preset does not change community. Add correction codes once, then enforce the request cap.
+`water_balance` groups related measurements; it does not subtract evapotranspiration energy flux from precipitation. Their units are incompatible. `agroclimatology` retains its five-code hourly expansion and uses seven codes otherwise. Monthly/climatology extrema are NASA source-period aggregates, not reconstructed daily records or calculated growing degree days. A preset does not change community. Add correction codes once, then enforce the request cap.
 
 `SI_EF_TILTED_SURFACE` is a verified climatology-only request alias, absent from the dictionary. Allow it explicitly alongside dictionary codes. The verified expansion is `SI_TILTED_AVG_HORIZONTAL`, `SI_TILTED_AVG_LAT_MINUS15`, `SI_TILTED_AVG_LATITUDE`, `SI_TILTED_AVG_LAT_PLUS15`, `SI_TILTED_AVG_VERTICAL`, `SI_TILTED_AVG_OPTIMAL`, `SI_TILTED_AVG_OPTIMAL_ANG`, and `SI_TILTED_AVG_OPTIMAL_ANG_ORT`. Build output columns from returned metadata and series keys, not the requested list; preserve new returned members. The orientation column contains strings such as `S`, with units `N/S Orientation`; it is not a numeric irradiance value.
 
@@ -127,19 +128,19 @@ Stage merged raw observations when oversized, retaining `locationId` and provena
 
 ### nasa_power_search_parameters
 
-Accept `community` and `temporalResolution` (defaults RE/daily echoed); optional `filter` (blank means all, ≤256 characters), `offset` default 0 (nonnegative integer) and `limit` default 20, maximum 100. Fetch/cache the complete selected dictionary, then require every case-insensitive whitespace token to match code/name/definition. Sort by code before slicing. Return effective filters, total matches, offset/limit, `hasMore`, and entries retaining code/type/units/name/definition/calculated/source/inputs/temporal/community where supplied. No DataCanvas. A zero-hit result returns `entries: []` with notice: “No parameters matched this filter for the selected community and temporal resolution. Broaden filter or use nasa_power_list_reference topic presets.”
+Accept `community` and `temporalResolution` (defaults RE/daily echoed); optional `filter` (blank means all, ≤256 characters), `offset` default 0 (nonnegative integer) and positive integer `limit` default 20. Clamp limits above 100 to 100 and disclose the effective cap in a notice on both output paths. Fetch/cache the complete selected dictionary, then require every case-insensitive whitespace token to match code/name/definition. Sort by code before slicing. Return effective filters, total matches, offset/limit, `hasMore`, and entries retaining code/type/units/name/definition/calculated/source/inputs/temporal/community where supplied. No DataCanvas. A zero-hit result returns `entries: []` with notice: “No parameters matched this filter for the selected community and temporal resolution. Broaden filter or use nasa_power_list_reference topic presets.”
 
 ### nasa_power_list_reference
 
-`topic: presets|communities|coverage|missing_data|wind_surfaces|dataframes`, default `presets`. Return typed entries plus guidance, including exact preset expansions/support, unit differences, observational latency caveats, the verified tilted alias, and the `grass`/`airportice` supported subset (aliases `airport_ice` and `airport ice` map to `airportice`). Dataframes topic reports current availability/drop enablement and process-local TTL; it never lists other canvases. Static source/coverage explanations include canonical public documentation URLs and verification dates.
+`topic: presets|communities|coverage|missing_data|wind_surfaces|dataframes`, default `presets`. Return typed entries plus guidance, including exact preset expansions/support, unit differences, observational latency caveats, the verified tilted alias, and all 17 canonical wind surfaces with NASA long names (aliases `airport_ice` and `airport ice` map to `airportice`). Vegetation aliases retain their underscores. Dataframes topic reports current availability/drop enablement and process-local TTL; it never lists other canvases. Static source/coverage explanations include canonical public documentation URLs and verification dates.
 
 ### Dataframe tools
 
 `nasa_power_dataframe_describe({canvas_id, table?})` lists only that canvas's active tables; a specific missing table throws `missing_table`. Return token, table names, actual column types/nullability, physical units/value kinds, source tool, normalized request, original metadata, creation/expiry times, and exact staged row count. Provenance keys include tenant + canvas token + table, never tenant alone. No tenant-wide token or metadata listing exists.
 
-`nasa_power_dataframe_query({canvas_id, sql, rowLimit?})` accepts SQL up to 16,384 characters and rowLimit 1–1,000 (default 100). No `registerAs`, exports, caller filenames or imports in this surface. Use framework single-statement/read-only/plan/function gates with `denySystemCatalogs: true`; reject external files, extension loading and dynamic catalog access. Return JSON-safe rows, column names, shown count, `truncated`, and count semantics: the provider's capped `rowCount` is not a full count when truncated. Also enforce the 40,000-character response budget; never split an individual value. Advise narrower projection/filter/limit if a single row exceeds it. Arbitrary query output text uses the same faithful renderer.
+`nasa_power_dataframe_query({canvas_id, sql, rowLimit?})` accepts SQL up to 16,384 characters and a positive integer rowLimit (default 100). Clamp limits above 1,000 to 1,000 with an effective-cap notice on both output paths. No `registerAs`, exports, caller filenames or imports in this surface. Use framework single-statement/read-only/plan/function gates with `denySystemCatalogs: true`; reject external files, extension loading and dynamic catalog access. Return JSON-safe rows, column names, shown count, `truncated`, and count semantics: the provider's capped `rowCount` is not a full count when truncated. Enforce the 40,000-character response budget including the structured notice and rendered enrichment trailer; never split an individual value. Advise narrower projection/filter/limit if a single row exceeds it. Arbitrary query output text uses the same faithful renderer.
 
-`nasa_power_dataframe_drop({canvas_id, table})` removes only the supplied table and its provenance, returning `{canvas_id, table, dropped}`. Unknown table is an idempotent `dropped: false`; unknown canvas is a specific NotFound with “The canvas has expired or is absent; there is nothing left to remove.” Do not use the producer re-stage recovery for drop. Never recommend drop in any recovery while it is disabled.
+`nasa_power_dataframe_drop({canvas_id, table})` removes only the supplied table and its provenance, returning `{canvas_id, table, dropped}`. An absent table returns `dropped: false` while other tables keep the canvas alive. Removing the final native table and its provenance retires the canvas under the same operation lock and releases its slot only after native absence is confirmed. Later describe/query/drop calls return `canvas_not_found`. Cleanup failures retain reservations for reconciliation. An unknown canvas is a specific NotFound with “The canvas has expired or is absent; there is nothing left to remove.” Do not use the producer re-stage recovery for drop. Never recommend drop in any recovery while it is disabled.
 
 ## DataCanvas and distribution
 
@@ -147,10 +148,14 @@ Mint a fresh canvas only when a producer actually spills and `canvas_id` is abse
 
 Stage the full bounded dataset, never silently a capped prefix. Return `dataset: {canvas_id, table, rowCount, expiresAt, columns, describeTool: 'nasa_power_dataframe_describe', queryTool: 'nasa_power_dataframe_query'}` and the same preview on both output surfaces. Keep units and provenance outside the engine in the injected process-lifetime storage under the scoped metadata key, surfaced by describe; the table's coordinate/location columns preserve joins. Registration failure is an error, not an inline success claiming the full set. Cancellation rolls back partial tables and metadata. Restart loses in-memory tables; expired tokens route to re-running their producer.
 
+When comparison summaries overflow, reserve and register observations, bucket summaries and per-location numeric summaries together. Return `summaryDatasets: {buckets, locations}`, each a full `DatasetHandle` with an exact row count. Keep whole-summary previews and per-location `summaryCount`; preserve every request echo and provenance value. The summary tables add `summaryIndex` for original array order; numeric summaries also add `locationId`. Reconstruct arrays using `ORDER BY summaryIndex` and bounded `LIMIT`/`OFFSET` pages, removing the index and grouping numeric summaries by location. An absent optional source unit is SQL NULL; omit that units field when restoring the original array. No summary schema permits a literal null source unit, so this mapping is unambiguous. Each table's provenance references the summary handles instead of repeating complete arrays, keeping targeted describe usable. A failed table or provenance write rolls back the entire batch, retaining any failed-cleanup reservations and returning no handle.
+
+Caller-correctable SQL errors retain the framework-redacted first diagnostic line (scan at most 2,048 characters, emit at most 1,024), with remaining absolute engine paths replaced by `[path]`. Preserve identifiers, offending conversion values, classification and recovery; never expose native cause, stack or arbitrary data. Operational DatabaseError, Timeout, cancellation and ServiceUnavailable messages remain generic.
+
 | Distribution | DuckDB decision |
 |:--|:--|
-| npm / `npx` / `bunx` | Add `@duckdb/node-api` as a direct runtime dependency, so platform bindings install alongside the package. Default provider remains `none`; operators enable `CANVAS_PROVIDER_TYPE=duckdb`. Test a clean packed consumer, not just the checkout. |
-| Docker | Include that dependency in target-architecture production installation; retain the existing glibc/musl pruning. Enable provider explicitly in documented container configuration. Build both supported architectures, verify native initialization on the host architecture, and inspect the foreign image's binding package and ELF architecture. Foreign-architecture runtime verification requires a matching native host. |
+| npm / `npx` / `bunx` | Add `@duckdb/node-api` as a direct runtime dependency, so platform bindings install alongside the package. `src/index.ts` defaults the provider to `duckdb` after `.env` loads; `CANVAS_PROVIDER_TYPE=none` disables it. Test a clean packed consumer, not just the checkout. |
+| Docker | Include that dependency in target-architecture production installation; retain the existing glibc/musl pruning. The code default enables the provider, so the image sets no provider variable. Build both supported architectures, verify native initialization on the host architecture, and inspect the foreign image's binding package and ELF architecture. Foreign-architecture runtime verification requires a matching native host. |
 | Portable MCPB | `scripts/clean-mcpb.ts` strips `@duckdb/node-bindings-*`; this artifact cannot provide DataCanvas. Keep provider `none` in bundle configuration and disclose inline-only operation. Do not offer a bundle switch implying natives exist. Use npm or Docker for larger analytical datasets. |
 
 When a result is oversized and canvas is disabled or unavailable, return `canvas_required`, never truncate it into an apparently complete answer. Portable MCPB users can narrow dates/parameters/region or use the npm/Docker distribution with canvas enabled. Query/describe remain discoverable with actionable configuration errors; drop still follows its explicit flag. DuckDB publishes prebuilt bindings for Linux, macOS, and Windows on x64 and arm64; verify the local npm installation and both Linux Docker architectures before release. Workers are unsupported.
@@ -191,7 +196,7 @@ type Window = { temporalResolution: 'hourly' | 'daily'; startDate: string; endDa
 type PowerRequest = Window & {
   latitude: number; longitude: number; community: Community;
   units: 'metric' | 'imperial'; timeStandard: 'LST' | 'UTC'; selection: Selection;
-  siteElevation?: number; windElevation?: number; windSurface?: 'grass' | 'airportice';
+  siteElevation?: number; windElevation?: number; windSurface?: keyof typeof WIND_SURFACES | 'airport_ice' | 'airport ice';
 };
 type ObservationRow = {
   periodKey: string; periodKind: PeriodKind; date: string | null;
@@ -277,7 +282,7 @@ Preserve window discrimination when composing schemas/types, including the distr
 | Retry | At most 2 attempts per HTTP request; a cold single-site call can use 6 total across dictionary, configuration, and data within one deadline. Comparison ≤12 total attempts including references for ≤10 sites; all attempts pass the pacer |
 | Upstream decoded body | 16 MiB per response, streamed byte cap regardless of Content-Length; comparison ≤32 MiB total |
 | Dataset | ≤250,000 rows, ≤64 numeric/orientation parameter columns, ≤32 MiB normalized serialized rows; check before registration |
-| Inline | Complete structured JSON and rendered text must each fit 40,000 characters; staged responses keep a nonempty whole-row preview of at most 20 rows. Reject oversized metadata or summaries with narrowing guidance before registration |
+| Inline | Complete structured JSON and rendered text must each fit 40,000 characters; staged responses keep a nonempty whole-row preview of at most 20 rows. Comparison summary overflow stages complete summary tables; other oversized metadata fails with narrowing guidance before registration |
 | Canvas | 256 MiB engine memory per canvas, ≤8 tables per canvas, ≤4 canvases per tenant and ≤8 per process; table TTL 30 min, canvas sliding TTL 1 h, absolute cap 6 h |
 | Staging admission | Retained normalized row bytes ≤64 MiB per tenant / 128 MiB process; in-flight decoded-body + normalized-row reservations ≤64 MiB per tenant / 128 MiB process; at most 2 producer calls active process-wide |
 | SQL | 10 s deadline, ≤16,384 SQL characters, ≤1,000 rows and ≤40,000 characters each for complete structured JSON and rendered text; one active query per canvas, ≤4 process-wide |
@@ -285,7 +290,7 @@ Preserve window discrimination when composing schemas/types, including the distr
 
 ### Config
 
-Server config contains `NASA_POWER_DATAFRAME_DROP_ENABLED` (boolean, default false) and validates the fixed workload limits above at startup. Framework canvas environment variables set provider, memory, canvas capacity and TTL; document their values in `.env.example`, registry/plugin configuration and README when implementing. `CANVAS_PROVIDER_TYPE=none` remains the distribution default. No API credential or arbitrary base-URL environment variable is required. Release 0.1.1 with `@cyanheads/mcp-ts-core ^0.13.15`; `createApp` name/title and MCPB identity are `nasa-power-mcp-server`, npm install arguments are `@cyanheads/nasa-power-mcp-server`, and registry identity is `io.github.cyanheads/nasa-power-mcp-server`.
+Server config contains `NASA_POWER_DATAFRAME_DROP_ENABLED` (boolean, default false) and validates the fixed workload limits above at startup. Framework canvas environment variables set provider, memory, canvas capacity and TTL; document their values in `.env.example`, registry/plugin configuration and README when implementing. npm and Docker default `CANVAS_PROVIDER_TYPE` to `duckdb`; the portable MCPB fixes it to `none`. No API credential or arbitrary base-URL environment variable is required. Release 0.1.1 with `@cyanheads/mcp-ts-core ^0.13.15`; `createApp` name/title and MCPB identity are `nasa-power-mcp-server`, npm install arguments are `@cyanheads/nasa-power-mcp-server`, and registry identity is `io.github.cyanheads/nasa-power-mcp-server`.
 
 All limits are explicit refusal boundaries with narrowing guidance, not silent partial datasets. Bound actual bytes and row generation as well as estimates. Recent/partial data can refresh after cache TTL. Single-flight requests may deduplicate an identical cache miss, but one subscriber's cancellation must not abort another subscriber's result; abandon the fetch only when no subscribers remain.
 

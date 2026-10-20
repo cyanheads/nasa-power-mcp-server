@@ -1,13 +1,13 @@
 <div align="center">
   <h1>@cyanheads/nasa-power-mcp-server</h1>
   <p><b>Query NASA POWER solar, wind, building, and agroclimatology data via MCP. STDIO or Streamable HTTP.</b>
-  <div>9 Tools • 0 Resources • 0 Prompts</div>
+  <div>9 Tools</div>
   </p>
 </div>
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-0.1.1-blue.svg?style=flat-square)](https://github.com/cyanheads/nasa-power-mcp-server/releases) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![npm](https://img.shields.io/npm/v/@cyanheads/nasa-power-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/nasa-power-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.4.3-blueviolet.svg?style=flat-square)](https://bun.sh/)
+[![Version](https://img.shields.io/badge/Version-0.1.1-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/nasa-power-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.3.1-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/nasa-power-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/nasa-power-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.4.3-blueviolet.svg?style=flat-square)](https://bun.sh/)
 
 </div>
 
@@ -45,66 +45,68 @@ Eight tools are enabled by default; `NASA_POWER_DATAFRAME_DROP_ENABLED=true` ena
 
 ### `nasa_power_get_timeseries` <sub>tool</sub>
 
-- `latitude` / `longitude`, `temporalResolution` (`hourly`, `daily`, `monthly`), and an inclusive `startDate` / `endDate` or `startYear` / `endYear` window. `selection` chooses a named `preset` or explicit `parameters`: at most 15 effective hourly codes or 20 otherwise, including corrections.
-- `community` (`RE`, `SB`, `AG`; default `RE`), `units` (`metric`, `imperial`) and `timeStandard` (`LST`, `UTC`) retain the returned source units and time labels. Optional `siteElevation` adds `PSC`; paired `windElevation` (10–300 meters) and `windSurface` (`grass`, `airportice`) add `WSC`.
-- Returns `request`, `metadata`, `parameters`, `expansions`, `omittedParameters`, `summaries`, `rows`, exact `rowCount` and nullable `dataset`. Optional `canvas_id` reuses a workspace when staging is needed.
+- `latitude` / `longitude` and `temporalResolution`: `hourly` and `daily` take an inclusive `startDate` / `endDate`, `monthly` takes `startYear` / `endYear`. `selection` is a named `preset` (default `solar_pv`) or explicit `parameters`, at most 15 effective codes hourly and 20 otherwise, corrections included.
+- `community` (`RE`, `SB`, `AG`; default `RE`), `units` (`metric`, `imperial`) and `timeStandard` (`LST`, `UTC`). Optional `siteElevation` adds `PSC`; paired `windElevation` (10–300 meters) and `windSurface` add `WSC`. Use `nasa_power_list_reference` topic `wind_surfaces` for all 17 canonical NASA aliases, including `airportgrass`, `airportice` and `vegtype_1`; vegetation underscores are retained.
+- Returns `metadata`, `parameters`, `expansions`, `omittedParameters`, `summaries`, `rows`, an exact `rowCount` and `dataset` (null unless staged). Optional `canvas_id` reuses a canvas when staging is needed.
 
 ---
 
 ### `nasa_power_get_climatology` <sub>tool</sub>
 
-- Point coordinates and the same parameter selection and corrections; optionally supply both `startYear` and `endYear`, otherwise use the source product range. No `temporalResolution` input is needed.
-- Complete monthly and annual records remain inline; the climatology alias `SI_EF_TILTED_SURFACE` preserves returned numeric angles and orientation text through `expansions` and parameter metadata.
+- Point coordinates with the same selection and corrections; optional `startYear` and `endYear` together, otherwise the source product range. No `temporalResolution` input.
+- Always inline, with no `canvas_id`; a profile over the 40,000-character budget fails `dataset_limit`. The `SI_EF_TILTED_SURFACE` alias lists its returned members, numeric angles and N/S orientation text included, in `expansions`.
 
 ---
 
 ### `nasa_power_get_region` <sub>tool</sub>
 
-- One `parameter`, ordered `latitudeMin` / `latitudeMax` and `longitudeMin` / `longitudeMax`, each spanning 2–10 degrees; split antimeridian regions. Supports daily, monthly and climatology windows, with common community, units and time settings.
-- Returns cell-tagged observations, `cellCount` and per-period `cellSummaries`. Means weight each returned grid cell equally; point correction fields and hourly regions are unsupported. Optional `canvas_id` reuses a staging workspace.
+- One `parameter` over ordered `latitudeMin` / `latitudeMax` and `longitudeMin` / `longitudeMax`, each axis spanning 2–10 degrees (`invalid_region` otherwise); split antimeridian regions into separate calls. `temporalResolution` is `daily`, `monthly` or `climatology`; point corrections are unsupported.
+- Returns cell-tagged `rows`, `cellCount` and per-period `summaries` with equal-weight cell `min` / `mean` / `max`, not area-weighted. Optional `canvas_id` reuses a canvas for staging.
 
 ---
 
 ### `nasa_power_compare_locations` <sub>tool</sub>
 
-- 2–10 `locations`, each with coordinates and a `label` of 1–120 characters, plus shared selection, corrections and window. Defaults to climatology; supports hourly, daily and monthly comparisons too.
-- Location-tagged rows, per-site metadata and summaries, seasonal buckets, `partial` and `failed` preserve operational failures alongside successes. `possibleSharedGridCell` flags nearby points without asserting exact grid identity.
-- Optional `sort` takes a numeric selected `parameter` and `direction` (`asc`, `desc`); sorting requires known identical units. Optional `canvas_id` reuses a workspace. All-site failure returns `all_locations_failed`.
+- 2–10 `locations`, each with coordinates and a `label` of 1–120 characters, sharing one selection, corrections and window. `temporalResolution` defaults to `climatology`; `hourly`, `daily` and `monthly` also work.
+- Returns successful `locations` with per-site provenance, location-tagged `rows`, annual and calendar-season `summaries`, and `failed` entries with `partial: true` when some sites fail; all-site failure returns `all_locations_failed`. `possibleSharedGridCell` flags sites that may share a grid cell.
+- Optional `sort` (`parameter`, `direction` `asc` / `desc`) orders by a selected numeric parameter with known identical units. Optional `canvas_id` reuses a canvas for staging.
+- When summaries exceed the response budget, `summaryDatasets.buckets` and `summaryDatasets.locations` point to complete SQL tables; inline summaries become whole-record previews and each location includes `summaryCount`. Query in `summaryIndex` order; the location-summary table includes `locationId`. SQL `units: null` represents an omitted source unit, not a known unit.
 
 ---
 
 ### `nasa_power_search_parameters` <sub>tool</sub>
 
-- `community` (default `RE`), `temporalResolution` (default `daily`), optional `filter` (up to 256 characters), `offset` and `limit` 1–100 (default 20).
-- Case-insensitive tokens filter the complete dictionary before sorted pagination; blank filter browses it. `entries`, `total`, `hasMore` and `truncated` describe the filtered page.
+- `community` (default `RE`), `temporalResolution` (default `daily`), optional `filter` (up to 256 characters), `offset` and positive integer `limit` (default 20, effective cap 100 with a notice when capped).
+- Every case-insensitive `filter` token must match a code, name or definition across the complete dictionary before sorted pagination; a blank filter browses it. `entries`, `total`, `hasMore` and `truncated` describe the page.
 
 ---
 
 ### `nasa_power_list_reference` <sub>tool</sub>
 
 - `topic`: `presets` (default), `communities`, `coverage`, `missing_data`, `wind_surfaces` or `dataframes`.
-- Returns typed `entries`, `guidance`, `documentationUrls` and `verifiedOn`. Presets are `solar_pv`, `wind_turbine`, `building_hvac`, `agroclimatology` and `water_balance`; `building_hvac` is unavailable hourly.
+- Returns typed `entries`, `guidance`, `documentationUrls` and `verifiedOn`. Presets are `solar_pv`, `wind_turbine`, `building_hvac`, `agroclimatology` and `water_balance`; `building_hvac` is unavailable hourly. `agroclimatology` adds `T2M_MAX` and `T2M_MIN` outside hourly resolution; monthly/climatology extremes remain source aggregates, without reconstructed daily records or calculated growing degree days.
 
 ---
 
 ### `nasa_power_dataframe_describe` <sub>tool</sub>
 
 - Required `canvas_id` from a producing response; optional `table` limits inspection to one table.
-- Returns current canvas/table expiry, actual SQL columns with source units and original scientific `provenance`. Only tables in the supplied canvas are visible.
+- Returns canvas and table expiry, SQL columns with source units, and original scientific `provenance`. Only tables in the supplied canvas are visible.
 
 ---
 
 ### `nasa_power_dataframe_query` <sub>tool</sub>
 
-- Required `canvas_id` and one read-only SELECT in `sql` (up to 16,384 characters); `rowLimit` 1–1,000 (default 100). Joins and aggregates operate on tables shown by describe; files, writes and system catalogs are denied.
-- Returns `columns`, `rows`, `rowCount`, `shownCount`, `truncated` and `countSemantics` (`exact` or `materialized_prefix`). SQL has a 10-second deadline; the complete structured and rendered outputs each must fit 40,000 characters.
+- Required `canvas_id` and one read-only SELECT in `sql` (up to 16,384 characters); positive integer `rowLimit` defaults to 100 and is capped at 1,000, with an effective-cap notice for larger requests. Files, writes and system catalogs are denied.
+- Returns `columns`, `rows`, `rowCount`, `shownCount`, `truncated` and `countSemantics` (`exact` or `materialized_prefix`). SQL has a 10-second deadline; the structured and rendered outputs each must fit 40,000 characters.
+- SQL mistakes retain bounded identifiers or conversion values with recovery guidance. Operational failures use generic messages; engine paths and native causes are excluded.
 
 ---
 
 ### `nasa_power_dataframe_drop` <sub>tool</sub>
 
 - Required `canvas_id` and exact `table`; enabled only by `NASA_POWER_DATAFRAME_DROP_ENABLED=true`.
-- Returns `dropped: false` for an absent table in a live canvas. Expired or unknown canvases return `canvas_not_found`.
+- Returns `dropped: false` for an absent table while other tables keep the canvas alive. Removing the final table also retires its canvas and frees its slot; subsequent describe, query or drop calls return `canvas_not_found`.
 
 ## Features
 
@@ -126,9 +128,7 @@ Staging requires DuckDB and supports at most 250,000 rows, 64 parameter columns 
 
 ## Getting started
 
-### Self-Hosted / Local
-
-Add this to your MCP client configuration:
+Add the following to your MCP client configuration file.
 
 ```json
 {
@@ -172,27 +172,44 @@ Or with Docker:
 }
 ```
 
-For Streamable HTTP from a local checkout:
+For Streamable HTTP, set the transport and start the server:
 
 ```sh
 MCP_TRANSPORT_TYPE=http MCP_HTTP_PORT=3010 bun run start:http
-# http://127.0.0.1:3010/mcp
+# Server listens at http://127.0.0.1:3010/mcp
 ```
 
 ### Prerequisites
 
-- [Bun v1.4.0](https://bun.sh/) or higher, or Node.js v24+.
-- npm and Docker install native DuckDB dependencies normally on supported platforms. Set `CANVAS_PROVIDER_TYPE=duckdb` to enable staging and SQL; the default is `none`.
+- [Bun v1.4.0](https://bun.sh/) or higher (or Node.js v24+).
+- npm and Docker install native DuckDB dependencies normally on supported platforms, and staging and SQL are on by default. Set `CANVAS_PROVIDER_TYPE=none` to keep every result inline.
 - The portable Claude Desktop MCPB bundle fixes `CANVAS_PROVIDER_TYPE=none` and supports inline results. Narrow an oversized request or use npm/Docker for analytics.
 
 ### Installation
 
+1. **Clone the repository:**
+
 ```sh
 git clone https://github.com/cyanheads/nasa-power-mcp-server.git
+```
+
+2. **Navigate into the directory:**
+
+```sh
 cd nasa-power-mcp-server
+```
+
+3. **Install dependencies:**
+
+```sh
 bun install
+```
+
+4. **Configure environment:**
+
+```sh
 cp .env.example .env
-bun run rebuild
+# edit .env to change transport, logging or canvas settings
 ```
 
 ## Configuration
@@ -200,7 +217,7 @@ bun run rebuild
 | Variable | Description | Default |
 |:---|:---|:---|
 | `NASA_POWER_DATAFRAME_DROP_ENABLED` | Expose explicit staged-table removal. | `false` |
-| `CANVAS_PROVIDER_TYPE` | `none` for inline results; `duckdb` for staging and SQL on npm/Docker. MCPB fixes `none`. | `none` |
+| `CANVAS_PROVIDER_TYPE` | `duckdb` stages large results for SQL on npm/Docker; `none` keeps results inline. MCPB fixes `none`. | `duckdb` |
 | `CANVAS_DEFAULT_MEMORY_LIMIT_MB` | Fixed engine memory limit; not total RSS or temporary disk. | `256` |
 | `CANVAS_MAX_CANVASES_PER_TENANT` | Fixed tenant canvas cap. | `4` |
 | `CANVAS_TTL_MS` | Fixed sliding canvas lifetime. | `3600000` |
@@ -209,7 +226,7 @@ bun run rebuild
 | `MCP_HTTP_HOST` / `MCP_HTTP_PORT` | HTTP bind address and port. | `127.0.0.1` / `3010` |
 | `MCP_AUTH_MODE` | `none`, `jwt` or `oauth`. | `none` |
 | `MCP_LOG_LEVEL` | Minimum log level. | `info` |
-| `OTEL_ENABLED` | Enable OpenTelemetry instrumentation. | `false` |
+| `OTEL_ENABLED` | Enable [OpenTelemetry](https://github.com/cyanheads/mcp-ts-core/tree/main/docs/telemetry). | `false` |
 
 DuckDB startup rejects changes to the four fixed canvas settings. See [`.env.example`](./.env.example) for optional transport, authentication, storage, logging and telemetry settings.
 
@@ -217,21 +234,32 @@ DuckDB startup rejects changes to the four fixed canvas settings. See [`.env.exa
 
 ### Local development
 
-```sh
-bun run rebuild
-bun run start:stdio   # or start:http
-bun run devcheck
-bun run test
-```
+- **Build and run the production version**:
+
+  ```sh
+  # One-time build
+  bun run rebuild
+
+  # Run the built server
+  bun run start:http
+  # or
+  bun run start:stdio
+  ```
+
+- **Run checks and tests**:
+  ```sh
+  bun run devcheck  # Lints, formats, type-checks, and more
+  bun run test      # Runs the test suite
+  ```
 
 ### Docker
 
 ```sh
 docker build -t nasa-power-mcp-server .
-docker run --rm -p 127.0.0.1:3010:3010 -e CANVAS_PROVIDER_TYPE=duckdb nasa-power-mcp-server
+docker run --rm -p 127.0.0.1:3010:3010 nasa-power-mcp-server
 ```
 
-The image defaults to HTTP on port 3010. For a client outside loopback, configure authentication and TLS at the deployment boundary.
+The image defaults to HTTP on port 3010 in stateless session mode and logs to `/var/log/nasa-power-mcp-server`. OpenTelemetry peer dependencies are installed by default; build with `--build-arg OTEL_ENABLED=false` to omit them. For a client outside loopback, configure authentication and TLS at the deployment boundary.
 
 ## Project structure
 
@@ -247,12 +275,13 @@ The image defaults to HTTP on port 3010. For a client outside loopback, configur
 
 ## Development guide
 
-See [`CLAUDE.md`](./CLAUDE.md) and [`AGENTS.md`](./AGENTS.md) for architectural rules.
+See [`CLAUDE.md`](./CLAUDE.md) for development guidelines and architectural rules. The short version:
 
-- Handlers throw, framework catches; use `ctx.log` and `ctx.state`.
-- Register tools in the `createApp()` array in `src/index.ts`.
-- Validate NASA responses before normalization; preserve sparse fields, source units and annual-period distinctions.
-- `content[]` and `structuredContent` carry the same complete data.
+- Handlers throw, framework catches — no `try/catch` in tool logic
+- Use `ctx.log` for logging and `ctx.signal` for cancellation
+- Register new tools in the `createApp()` array in `src/index.ts`
+- Wrap external API calls: validate raw → normalize to domain type → return output schema; never fabricate missing fields, and preserve source units and annual-period distinctions
+- `content[]` and `structuredContent` carry the same complete data
 
 ## Contributing
 
@@ -265,4 +294,4 @@ bun run test
 
 ## License
 
-Apache 2.0. See [LICENSE](./LICENSE).
+This project is licensed under the Apache 2.0 License. See the [LICENSE](./LICENSE) file for details.
