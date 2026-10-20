@@ -1,6 +1,6 @@
 # nasa-power-mcp-server - Directory Structure
 
-Generated on: 2026-10-20 02:27:43
+Generated on: 2026-10-20 07:39:15
 
 ```text
 nasa-power-mcp-server/
@@ -25,6 +25,7 @@ nasa-power-mcp-server/
 │   └── settings.json
 ├── changelog/
 │   ├── 0.1.x/
+│   ├── 0.2.x/
 │   └── template.md
 ├── docs/
 │   └── design.md
@@ -174,6 +175,8 @@ nasa-power-mcp-server/
 │   ├── config/
 │   │   ├── server-config.test.ts
 │   │   └── startup.test.ts
+│   ├── fixtures/
+│   │   └── comparison-full.json
 │   ├── fuzz/
 │   ├── integration/
 │   ├── mcp-server/
