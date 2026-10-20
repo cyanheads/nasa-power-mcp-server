@@ -4,7 +4,7 @@ description: >
   DataCanvas primitive reference — a Tier 3 SQL/analytical workspace for tabular MCP servers, backed by DuckDB. Use when registering tables from upstream APIs, running ad-hoc SQL across them, and exporting results. Covers the acquire → register → query → export flow, per-table TTL, the token-sharing pattern for multi-agent collaboration, env config, and Cloudflare Workers fail-closed behavior.
 metadata:
   author: cyanheads
-  version: "2.8"
+  version: "2.9"
   audience: external
   type: reference
 ---
@@ -565,8 +565,7 @@ Pass `schema` explicitly whenever a column's type can't be read off the first ro
 |:---------|:-------|
 | Linux x64 / arm64 | Supported |
 | macOS x64 / arm64 | Supported |
-| Windows x64 | Supported |
-| Windows arm64 | **Not supported** (DuckDB upstream limitation) |
+| Windows x64 / arm64 | Supported (`@duckdb/node-api` 1.5.6-r.1 publishes prebuilt bindings for both) |
 | Cloudflare Workers | **Not supported** — fail-closed at init time |
 
 ---
