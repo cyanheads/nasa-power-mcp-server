@@ -1,6 +1,6 @@
 {
   "name": "nasa-power-mcp-server",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Query NASA POWER solar, wind, building, and agroclimatology data via MCP. STDIO or Streamable HTTP.",
   "author": { "name": "cyanheads", "email": "casey@caseyjhand.com", "url": "https://github.com/cyanheads" },
   "homepage": "https://github.com/cyanheads/nasa-power-mcp-server#readme",
