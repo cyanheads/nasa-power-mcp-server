@@ -4,7 +4,7 @@ description: >
   Reference for core and server configuration in `@cyanheads/mcp-ts-core`. Covers env var tables with defaults, priority order, server-specific Zod schema pattern, and Workers lazy-parsing requirement.
 metadata:
   author: cyanheads
-  version: "1.26"
+  version: "1.27"
   audience: external
   type: reference
 ---
@@ -176,7 +176,7 @@ await createApp({ sessionMode: { default: 'stateful', require: 'stateful' } }); 
 | `CANVAS_DEFAULT_ROW_LIMIT` | `canvas.defaultRowLimit` | `10000` | Default cap on rows materialized into a query response. |
 | `CANVAS_SCHEMA_SNIFF_ROWS` | `canvas.schemaSniffRows` | `100` | Rows to materialize for schema inference when `schema` is omitted. |
 
-**Platform support:** Linux/macOS/Windows × x64 supported, Linux/macOS arm64 supported. Windows arm64 unsupported (DuckDB upstream). See `api-canvas` skill for the full DataCanvas reference.
+**Platform support:** Linux, macOS and Windows on x64 and arm64. See `api-canvas` skill for the full DataCanvas reference.
 
 #### Supabase (optional sub-object)
 
