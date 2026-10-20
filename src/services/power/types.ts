@@ -1,6 +1,6 @@
 /** @fileoverview Scientific request, source and output contracts. @module services/power/types */
 import { z } from '@cyanheads/mcp-ts-core';
-import type { Preset } from './presets.js';
+import { type Preset, WIND_SURFACES } from './presets.js';
 
 /** JSON-compatible metadata preserves unfamiliar upstream fields. */
 export type JsonValue =
@@ -87,6 +87,7 @@ export function isDate(value: string): boolean {
 }
 const date = z
   .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
   .refine(isDate, 'Expected a real Gregorian YYYY-MM-DD date')
   .describe('Inclusive Gregorian date in YYYY-MM-DD format');
 const year = z.number().int().min(1981).max(9999).describe('Calendar year');
@@ -118,7 +119,11 @@ const point = {
       'Wind correction height in meters; requires windSurface and adds WSC to the effective parameter selection',
     ),
   windSurface: z
-    .enum(['grass', 'airportice', 'airport_ice', 'airport ice'])
+    .enum([
+      ...(Object.keys(WIND_SURFACES) as (keyof typeof WIND_SURFACES)[]),
+      'airport_ice',
+      'airport ice',
+    ])
     .optional()
     .describe(
       'Wind surface paired with windElevation; airport_ice and airport ice alias airportice',
@@ -224,6 +229,54 @@ export const CompareRequestSchema = z.discriminatedUnion('temporalResolution', [
     .describe('Climatology comparison request'),
 ]);
 export type CompareRequest = z.infer<typeof CompareRequestSchema>;
+/** Output echoes validated requests; window fields occur once instead of repeating input branches. */
+const normalizedWindow = {
+  temporalResolution: ResolutionSchema,
+  startDate: z.string().optional().describe('Inclusive start date for hourly or daily data'),
+  endDate: z.string().optional().describe('Inclusive end date for hourly or daily data'),
+  startYear: z
+    .number()
+    .int()
+    .optional()
+    .describe('Start calendar year for monthly or custom climatology data'),
+  endYear: z
+    .number()
+    .int()
+    .optional()
+    .describe('End calendar year for monthly or custom climatology data'),
+};
+const normalizedPoint = {
+  ...point,
+  selection: z
+    .object({
+      mode: z.enum(['preset', 'parameters']).describe('Normalized selection mode'),
+      preset: SelectionSchema.options[0].shape.preset.optional(),
+      parameters: z
+        .array(z.string().describe('Normalized unique parameter code'))
+        .optional()
+        .describe('Codes in first-seen order for explicit selection'),
+    })
+    .describe('Normalized preset or explicit code selection'),
+};
+/** Compact typed scientific request provenance; input schemas own validation. */
+export const NormalizedPowerRequestSchema = z.object({ ...normalizedPoint, ...normalizedWindow });
+/** Climatology echoes have no date window. */
+export const NormalizedClimatologyRequestSchema = NormalizedPowerRequestSchema.omit({
+  startDate: true,
+  endDate: true,
+}).extend({
+  temporalResolution: z.literal('climatology').describe('Monthly and annual climatology'),
+});
+/** Regional provenance retains every bound and the single effective parameter. */
+export const NormalizedRegionRequestSchema = z.object({ ...region, ...normalizedWindow });
+const { latitude: _outputLat, longitude: _outputLon, ...normalizedComparison } = normalizedPoint;
+/** Comparison provenance keeps original location order and the requested sort. */
+export const NormalizedCompareRequestSchema = z.object({
+  ...normalizedComparison,
+  ...normalizedWindow,
+  locations: comparison.locations,
+  sort: comparison.sort,
+});
 /** Exact period classifications prevent annual/monthly mixing. */
 export const PeriodKindSchema = z
   .enum(['hour', 'day', 'month', 'annual', 'climatology_month', 'climatology_annual'])
@@ -338,7 +391,7 @@ const omissions = z
   .describe('Requested parameters omitted by the source, distinct from fill values');
 /** Scientific envelope before canvas presentation. */
 export const PowerDatasetSchema = z.object({
-  request: PowerRequestSchema.describe('Normalized scientific request and corrections'),
+  request: NormalizedPowerRequestSchema.describe('Normalized scientific request and corrections'),
   metadata: PowerMetadataSchema.describe('Original source provenance and access information'),
   parameters: z
     .array(ParameterMetadataSchema.describe('Returned scientific parameter metadata'))
@@ -355,9 +408,13 @@ export const PowerDatasetSchema = z.object({
     .describe('Numeric observation summaries with explicit missingness'),
   rows: z
     .array(ObservationRowSchema.describe('One original returned period'))
-    .describe('All bounded normalized observation rows'),
+    .describe(
+      'Complete inline observations or bounded preview with a full-data handle and exact rowCount',
+    ),
 });
-export type PowerDataset = z.infer<typeof PowerDatasetSchema>;
+export type PowerDataset = Omit<z.infer<typeof PowerDatasetSchema>, 'request'> & {
+  request: PowerRequest;
+};
 /** Cross-cell statistics are per parameter and original period. */
 export const CellSummarySchema = z.object({
   parameter: z.string().describe('Parameter code compared across grid cells'),
@@ -375,18 +432,22 @@ export const RegionalDatasetSchema = PowerDatasetSchema.omit({
   request: true,
   summaries: true,
 }).extend({
-  request: RegionRequestSchema.describe('Normalized regional bounds, window and parameter'),
+  request: NormalizedRegionRequestSchema.describe(
+    'Normalized regional bounds, window and parameter',
+  ),
   cellCount: z.number().describe('Total features returned by NASA'),
   summaries: z
     .array(CellSummarySchema.describe('One parameter/period cross-cell statistic'))
     .describe('Cross-cell summaries kept separate for every period'),
 });
-export type RegionalDataset = z.infer<typeof RegionalDatasetSchema>;
+export type RegionalDataset = Omit<z.infer<typeof RegionalDatasetSchema>, 'request'> & {
+  request: RegionRequest;
+};
 /** Temporary full-table pointer returned by the presentation service. */
 export const DatasetHandleSchema = z.object({
   canvas_id: z.string().describe('Explicit process-local canvas access token'),
   table: z.string().describe('Registered full-data table name'),
-  rowCount: z.number().describe('Exact full staged observation count'),
+  rowCount: z.number().describe('Exact full staged row count'),
   expiresAt: z.string().describe('Table expiry timestamp'),
   columns: z
     .array(

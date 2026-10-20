@@ -1,6 +1,9 @@
 /** @fileoverview Complete structured and rendered analytical response budgets. @module tests/services/canvas/response-budget */
+
+import { readFile } from 'node:fs/promises';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { POWER_LIMITS } from '@/config/server-config.js';
+import { ComparisonOutputSchema } from '@/mcp-server/tools/definitions/comparison-contracts.js';
 import { formatFaithfully } from '@/services/canvas/format.js';
 import { dataset, nativeFixture } from './fixture.js';
 
@@ -16,6 +19,145 @@ describe('complete analytical response budget', () => {
   afterEach(async () => {
     vi.restoreAllMocks();
     await fixture.close();
+  });
+
+  it('stages captured ten-site default comparison summaries with reconstructable handles', async () => {
+    const captured = ComparisonOutputSchema.omit({ rowCount: true, dataset: true }).parse(
+      JSON.parse(
+        await readFile(new URL('../../fixtures/comparison-full.json', import.meta.url), 'utf8'),
+      ),
+    );
+    delete captured.summaries[1]!.units;
+    delete captured.locations[1]!.summaries[1]!.units;
+    const output = await fixture.service.presentComparison(
+      captured,
+      undefined,
+      fixture.ctx,
+      'nasa_power_compare_locations',
+    );
+    expect(ComparisonOutputSchema.safeParse(output).success).toBe(true);
+    expect(JSON.stringify(output).length).toBeLessThanOrEqual(40000);
+    expect(renderedLength(output)).toBeLessThanOrEqual(40000);
+    expect(output.request).toEqual(captured.request);
+    expect(output.locations.map(({ summaries: _s, summaryCount: _c, ...rest }) => rest)).toEqual(
+      captured.locations.map(({ summaries: _s, ...rest }) => rest),
+    );
+    const handles = output.summaryDatasets!;
+    for (const handle of [output.dataset!, handles.buckets, handles.locations]) {
+      const description = await fixture.service.describe(
+        handle.canvas_id,
+        { table: handle.table },
+        fixture.ctx,
+      );
+      expect(JSON.stringify(description).length).toBeLessThanOrEqual(40000);
+      expect(renderedLength(description)).toBeLessThanOrEqual(40000);
+    }
+    const read = async (handle: typeof handles.buckets) => {
+      const rows = [];
+      for (let offset = 0; offset < handle.rowCount; offset += 20) {
+        const page = await fixture.service.query(
+          handle.canvas_id,
+          { sql: `SELECT * FROM ${handle.table} ORDER BY summaryIndex LIMIT 20 OFFSET ${offset}` },
+          fixture.ctx,
+        );
+        expect(JSON.stringify(page).length).toBeLessThanOrEqual(40000);
+        expect(renderedLength(page)).toBeLessThanOrEqual(40000);
+        rows.push(...page.rows);
+      }
+      return rows.map(({ summaryIndex: _i, ...row }) =>
+        row.units === null
+          ? Object.fromEntries(Object.entries(row).filter(([key]) => key !== 'units'))
+          : row,
+      );
+    };
+    expect(await read(handles.buckets)).toEqual(captured.summaries);
+    expect(await read(handles.locations)).toEqual(
+      captured.locations.flatMap((location) =>
+        location.summaries.map((summary) => ({ locationId: location.locationId, ...summary })),
+      ),
+    );
+    const pastEnd = await fixture.service.query(
+      handles.buckets.canvas_id,
+      { sql: `SELECT * FROM ${handles.buckets.table} LIMIT 20 OFFSET ${handles.buckets.rowCount}` },
+      fixture.ctx,
+    );
+    expect(pastEnd.rows).toEqual([]);
+    expect(pastEnd.rowCount).toBe(0);
+  });
+  it.each([2, 3])(
+    'rolls back every comparison table when registration %i fails',
+    async (failureAt) => {
+      const captured = ComparisonOutputSchema.omit({ rowCount: true, dataset: true }).parse(
+        JSON.parse(
+          await readFile(new URL('../../fixtures/comparison-full.json', import.meta.url), 'utf8'),
+        ),
+      );
+      const register = fixture.provider.registerTable.bind(fixture.provider);
+      let calls = 0;
+      vi.spyOn(fixture.provider, 'registerTable').mockImplementation(async (...args) => {
+        if (++calls === failureAt) throw new Error('registration failed');
+        return register(...args);
+      });
+      await expect(
+        fixture.service.presentComparison(
+          captured,
+          undefined,
+          fixture.ctx,
+          'nasa_power_compare_locations',
+        ),
+      ).rejects.toThrow('registration failed');
+      expect(fixture.canvas.countForTenant(fixture.ctx)).toBe(0);
+      vi.restoreAllMocks();
+      const next = await fixture.service.presentComparison(
+        captured,
+        undefined,
+        fixture.ctx,
+        'nasa_power_compare_locations',
+      );
+      expect(
+        (
+          await fixture.service.describe(
+            next.dataset!.canvas_id,
+            { table: next.dataset!.table },
+            fixture.ctx,
+          )
+        ).tables,
+      ).toHaveLength(1);
+    },
+  );
+
+  it('rolls back all comparison tables and provenance after a later metadata failure while preserving existing tables', async () => {
+    const existing = (
+      await fixture.service.present(dataset(), undefined, fixture.ctx, 'nasa_power_get_timeseries')
+    ).dataset!;
+    const captured = ComparisonOutputSchema.omit({ rowCount: true, dataset: true }).parse(
+      JSON.parse(
+        await readFile(new URL('../../fixtures/comparison-full.json', import.meta.url), 'utf8'),
+      ),
+    );
+    const write = fixture.storage.set.bind(fixture.storage);
+    let count = 0;
+    vi.spyOn(fixture.storage, 'set').mockImplementation(async (...args) => {
+      await write(...args);
+      if (++count === 3) throw new Error('later metadata failure');
+    });
+    await expect(
+      fixture.service.presentComparison(
+        captured,
+        existing.canvas_id,
+        fixture.ctx,
+        'nasa_power_compare_locations',
+      ),
+    ).rejects.toThrow('later metadata failure');
+    expect(
+      (await fixture.provider.describe(existing.canvas_id, fixture.ctx)).map((table) => table.name),
+    ).toEqual([existing.table]);
+    expect((await fixture.storage.list('power/canvas/', fixture.ctx)).keys).toHaveLength(1);
+    expect(
+      (await fixture.service.describe(existing.canvas_id, {}, fixture.ctx)).tables.map(
+        (table) => table.table,
+      ),
+    ).toEqual([existing.table]);
   });
 
   it('rejects oversized multi-cell period summaries before acquiring or registering native state', async () => {
@@ -139,6 +281,21 @@ describe('complete analytical response budget', () => {
     expect(stored.rows).toEqual(point.rows);
     expect.soft(JSON.stringify(output).length).toBeLessThanOrEqual(POWER_LIMITS.inlineCharacters);
     expect.soft(renderedLength(output)).toBeLessThanOrEqual(POWER_LIMITS.inlineCharacters);
+  });
+
+  it('preserves ordinary single-table staging near the existing response budget', async () => {
+    const source = { ...dataset(), metadata: { note: 'x'.repeat(37500) } };
+    const output = await fixture.service.present(
+      source,
+      undefined,
+      fixture.ctx,
+      'nasa_power_get_timeseries',
+    );
+    expect(output.dataset).not.toBeNull();
+    expect(output.metadata).toEqual(source.metadata);
+    expect(Math.max(JSON.stringify(output).length, renderedLength(output))).toBeGreaterThan(39000);
+    expect(JSON.stringify(output).length).toBeLessThanOrEqual(40000);
+    expect(renderedLength(output)).toBeLessThanOrEqual(40000);
   });
 
   it('rejects SQL output whose structured JSON fits but faithful rendering exceeds the budget', async () => {

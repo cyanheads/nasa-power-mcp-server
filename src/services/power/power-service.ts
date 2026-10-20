@@ -1,7 +1,7 @@
 /** @fileoverview Fixed-origin NASA POWER client with bounded shared pacing/cache. @module services/power/power-service */
 import type { Context, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
-import { createPacer, withRetry } from '@cyanheads/mcp-ts-core/utils';
+import { createPacer, defaultIsTransient, withRetry } from '@cyanheads/mcp-ts-core/utils';
 import { getServerConfig, POWER_LIMITS, type ServerConfig } from '../../config/server-config.js';
 import { describePowerError, powerError, REFERENCE_LIMIT_RECOVERY, shapeError } from './errors.js';
 import {
@@ -319,6 +319,9 @@ export class PowerService {
           signal: budget.signal,
           operation: 'PowerService.load',
           context: ctx,
+          isTransient: (error) =>
+            !(error instanceof McpError && error.data?.reason === 'upstream_rate_limited') &&
+            defaultIsTransient(error),
         },
       );
     } catch (error) {
@@ -446,14 +449,6 @@ export class PowerService {
         throw powerError('invalid_correction', 'PSC requires siteElevation.', {
           recovery: { hint: 'Supply siteElevation for PSC, or remove PSC from parameters.' },
         });
-      if (
-        request.selection.mode === 'parameters' &&
-        new Set(request.selection.parameters).size !== request.selection.parameters.length
-      )
-        throw powerError(
-          'unsupported_parameter',
-          'Parameter codes must be unique after normalization.',
-        );
     } else {
       const latSpan = request.latitudeMax - request.latitudeMin;
       const lonSpan = request.longitudeMax - request.longitudeMin;
@@ -549,8 +544,7 @@ export class PowerService {
         query.set('site-elevation', String(request.siteElevation));
       if (request.windElevation !== undefined)
         query.set('wind-elevation', String(request.windElevation));
-      if (request.windSurface !== undefined)
-        query.set('wind-surface', request.windSurface.replaceAll('_', '').replaceAll(' ', ''));
+      if (request.windSurface !== undefined) query.set('wind-surface', request.windSurface);
     } else {
       query.set('latitude-min', String(request.latitudeMin));
       query.set('latitude-max', String(request.latitudeMax));
@@ -566,10 +560,10 @@ export class PowerService {
     budget = this.createCallBudget(ctx),
   ): Promise<PowerDataset> {
     const request = PowerRequestSchema.parse(input);
-    if (request.windSurface)
-      request.windSurface = request.windSurface.replaceAll('_', '').replaceAll(' ', '') as
-        | 'grass'
-        | 'airportice';
+    if (request.windSurface === 'airport_ice' || request.windSurface === 'airport ice')
+      request.windSurface = 'airportice';
+    if (request.selection.mode === 'parameters')
+      request.selection.parameters = [...new Set(request.selection.parameters)];
     const codes = await this.prepare(request, ctx, budget);
     const url = this.url(request, codes);
     const result = await this.load(url, PointPayloadSchema, ctx, budget, POWER_LIMITS.dataTtlMs);

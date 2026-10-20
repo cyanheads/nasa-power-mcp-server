@@ -1,4 +1,5 @@
 /** @fileoverview Scientific normalization and request contract behavior. @module tests/services/power/science */
+import { z } from '@cyanheads/mcp-ts-core';
 import { describe, expect, it } from 'vitest';
 import {
   assertDatasetBounds,
@@ -47,6 +48,41 @@ const payload = (parameter: Record<string, Record<string, number | string>>) =>
   });
 
 describe('scientific contracts', () => {
+  it('advertises a Gregorian date shape without accepting impossible dates', () => {
+    const schema = z.toJSONSchema(PowerRequestSchema.options[1], { io: 'input' });
+    expect(schema.properties?.startDate).toMatchObject({ pattern: '^\\d{4}-\\d{2}-\\d{2}$' });
+    expect(() => request({ startDate: '2024-02-30' })).toThrow();
+  });
+  it('keeps normalized output requests compact and explicitly typed', () => {
+    const schema = z.toJSONSchema(PowerDatasetSchema.shape.request, { io: 'output' });
+    expect(schema).toMatchObject({
+      type: 'object',
+      properties: { latitude: { type: 'number' }, selection: { type: 'object' } },
+    });
+    expect(JSON.stringify(schema).length).toBeLessThan(5000);
+  });
+  it('preserves every normalized request field through dataset output parsing', () => {
+    for (const window of [
+      { temporalResolution: 'hourly', startDate: '2024-01-01', endDate: '2024-01-02' },
+      { temporalResolution: 'daily', startDate: '2024-01-01', endDate: '2024-01-02' },
+      { temporalResolution: 'monthly', startYear: 2024, endYear: 2024 },
+      { temporalResolution: 'climatology', startYear: 2001, endYear: 2020 },
+    ]) {
+      const normalized = request({
+        startDate: undefined,
+        endDate: undefined,
+        ...window,
+        community: 'AG',
+        timeStandard: 'UTC',
+        units: 'imperial',
+        siteElevation: 0,
+        windElevation: 100,
+        windSurface: 'airportice',
+      });
+      const data = normalizePoint(payload({}), normalized, access);
+      expect(PowerDatasetSchema.parse(data)).toEqual(data);
+    }
+  });
   it('defaults point and region to daily and comparison to climatology', () => {
     expect(request({ temporalResolution: undefined }).temporalResolution).toBe('daily');
     expect(
@@ -260,4 +296,61 @@ describe('scientific contracts', () => {
       sortMetrics: [{ mean: null }],
     });
   });
+  it.each([
+    [
+      'monthly',
+      { startYear: 2024, endYear: 2024 },
+      { '202401': 10, '202413': 30 },
+      'month',
+      'annual',
+    ],
+    ['climatology', {}, { JAN: 10, ANN: 30 }, 'climatology_month', 'climatology_annual'],
+  ] as const)(
+    'retains %s source temperature extrema and annual period semantics',
+    (temporalResolution, window, values, monthKind, annualKind) => {
+      const source = payload({
+        T2M_MAX: values,
+        T2M_MIN: Object.fromEntries(Object.entries(values).map(([key, value]) => [key, -value])),
+      });
+      source.parameters = { T2M_MAX: { units: 'C' }, T2M_MIN: { units: 'C' } };
+      const data = normalizePoint(
+        source,
+        request({
+          temporalResolution,
+          startDate: undefined,
+          endDate: undefined,
+          ...window,
+          selection: { mode: 'preset', preset: 'agroclimatology' },
+        }),
+        access,
+      );
+      expect(data.parameters).toEqual([
+        expect.objectContaining({ code: 'T2M_MAX', units: 'C' }),
+        expect.objectContaining({ code: 'T2M_MIN', units: 'C' }),
+      ]);
+      expect(data.summaries).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            parameter: 'T2M_MAX',
+            units: 'C',
+            periodKind: monthKind,
+            mean: 10,
+          }),
+          expect.objectContaining({
+            parameter: 'T2M_MAX',
+            units: 'C',
+            periodKind: annualKind,
+            mean: 30,
+          }),
+          expect.objectContaining({
+            parameter: 'T2M_MIN',
+            units: 'C',
+            periodKind: annualKind,
+            mean: -30,
+          }),
+        ]),
+      );
+      expect(data.rows).toHaveLength(2);
+    },
+  );
 });

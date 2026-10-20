@@ -4,13 +4,13 @@ import type { Context } from '@cyanheads/mcp-ts-core';
 import { z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 import { POWER_LIMITS } from '@/config/server-config.js';
-import { getCanvasService } from '@/services/canvas/index.js';
+import { getCanvasService, SummaryDatasetsSchema } from '@/services/canvas/index.js';
 import {
   type CompareRequest,
-  CompareRequestSchema,
   DatasetHandleSchema,
   describePowerError,
   getPowerService,
+  NormalizedCompareRequestSchema,
   type ObservationRow,
   ObservationRowSchema,
   type ParameterMetadata,
@@ -53,6 +53,11 @@ const BucketSchema = z.object({
   mean: z.number().nullable().describe('Valid-only arithmetic mean, null without valid values'),
 });
 const LocationSchema = IdentitySchema.extend(PowerDatasetSchema.omit({ rows: true }).shape).extend({
+  summaryCount: z
+    .number()
+    .int()
+    .optional()
+    .describe('Exact number of summaries for this location when summaries are previews'),
   sortMetric: z
     .number()
     .nullable()
@@ -60,7 +65,9 @@ const LocationSchema = IdentitySchema.extend(PowerDatasetSchema.omit({ rows: tru
 });
 /** Full per-site provenance survives analytical staging. */
 export const ComparisonOutputSchema = z.object({
-  request: CompareRequestSchema.describe('Normalized shared request and original location order'),
+  request: NormalizedCompareRequestSchema.describe(
+    'Normalized shared request and original location order',
+  ),
   metadata: z
     .object({
       fetchedAt: z.string().describe('Comparison assembly access time'),
@@ -109,6 +116,9 @@ export const ComparisonOutputSchema = z.object({
     .describe('Complete observations or bounded preview when staged'),
   rowCount: z.number().int().describe('Exact full merged observation count'),
   dataset: DatasetHandleSchema.nullable().describe('Full-table handle on overflow, otherwise null'),
+  summaryDatasets: SummaryDatasetsSchema.optional().describe(
+    'Full summary handles when summary arrays are bounded previews; summaryIndex restores original order',
+  ),
 });
 
 /** Sequential sites share references, pacing, attempts, decoded bytes and deadline. */
@@ -117,6 +127,10 @@ export function presentComparison(
   canvasId: string | undefined,
   ctx: Context,
 ) {
+  if (request.selection.mode === 'parameters')
+    request.selection.parameters = [...new Set(request.selection.parameters)];
+  if (request.windSurface === 'airport_ice' || request.windSurface === 'airport ice')
+    request.windSurface = 'airportice';
   return getCanvasService().withProducer('comparison', ctx, async (producerCtx) => {
     const power = getPowerService();
     const budget = power.createCallBudget(producerCtx, true);
@@ -292,7 +306,7 @@ export function presentComparison(
             : (sort.direction === 'asc' ? 1 : -1) * (a.sortMetric - b.sortMetric),
       );
     callCtx.signal.throwIfAborted();
-    return getCanvasService().present(
+    return getCanvasService().presentComparison(
       {
         request,
         metadata: {

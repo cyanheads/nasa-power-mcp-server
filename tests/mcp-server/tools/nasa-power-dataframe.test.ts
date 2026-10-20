@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { dataframeDescribeTool } from '@/mcp-server/tools/definitions/nasa-power-dataframe-describe.tool.js';
 import { dataframeDropTool } from '@/mcp-server/tools/definitions/nasa-power-dataframe-drop.tool.js';
 import { dataframeQueryTool } from '@/mcp-server/tools/definitions/nasa-power-dataframe-query.tool.js';
+import { formatFaithfully } from '@/services/canvas/format.js';
 import { dataset, nativeFixture } from '../../services/canvas/fixture.js';
 
 describe('dataframe tool contract', () => {
@@ -19,6 +20,63 @@ describe('dataframe tool contract', () => {
       await fixture.service.present(dataset(), undefined, fixture.ctx, 'nasa_power_get_timeseries')
     ).dataset!;
   }
+  it('clamps oversized query limits with a bounded result and notice on both paths', async () => {
+    const handle = await stage();
+    const result = await runToolContract(dataframeQueryTool, {
+      canvas_id: handle.canvas_id,
+      sql: `SELECT a.T2M FROM ${handle.table} a CROSS JOIN ${handle.table} b`,
+      rowLimit: 1001,
+    });
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      shownCount: 1000,
+      truncated: true,
+      countSemantics: 'materialized_prefix',
+      notice: 'The effective row limit is 1000; larger requested limits are capped.',
+    });
+    const rendered = result.content
+      .filter((block) => block.type === 'text')
+      .map((block) => block.text)
+      .join('');
+    expect(rendered).toContain(
+      'The effective row limit is 1000; larger requested limits are capped.',
+    );
+    expect(rendered.length).toBeLessThanOrEqual(40000);
+    expect(JSON.stringify(result.structuredContent).length).toBeLessThanOrEqual(40000);
+  });
+  it('counts the effective-limit notice trailer against the complete response budget', async () => {
+    const empty = {
+      canvas_id: 'abcdefghij',
+      columns: ['label'],
+      rows: [{ label: '' }],
+      rowCount: 1,
+      shownCount: 1,
+      truncated: false,
+      countSemantics: 'exact',
+    };
+    // Nonempty strings use inline literals; account for their delimiters separately from the blank fence.
+    const sample = { ...empty, rows: [{ label: 'x' }] };
+    const characters = 40000 - formatFaithfully(sample)[0]!.text.length + 1;
+    const handle = await stage();
+    const input = {
+      canvas_id: handle.canvas_id,
+      sql: `SELECT repeat('x', ${characters}) AS label FROM ${handle.table} LIMIT 1`,
+      rowLimit: 1000,
+    };
+    expect((await runToolContract(dataframeQueryTool, input)).isError).not.toBe(true);
+    const capped = await runToolContract(dataframeQueryTool, { ...input, rowLimit: 1001 });
+    expect(capped.structuredContent).toMatchObject({
+      error: {
+        data: { reason: 'query_limit', recovery: { hint: expect.stringContaining('narrow') } },
+      },
+    });
+    expect(
+      capped.content
+        .filter((block) => block.type === 'text')
+        .map((block) => block.text)
+        .join(''),
+    ).toContain('query_limit');
+  });
 
   it('renders query structured rows and real multiline strings on the content surface', async () => {
     const handle = await stage();
@@ -117,7 +175,7 @@ describe('dataframe tool contract', () => {
       { canvas_id: 'bad', sql: 'SELECT 1' },
       { canvas_id: 'abcdefghij', sql: '' },
       { canvas_id: 'abcdefghij', sql: 'SELECT 1', rowLimit: 0 },
-      { canvas_id: 'abcdefghij', sql: 'SELECT 1', rowLimit: 1001 },
+      { canvas_id: 'abcdefghij', sql: 'SELECT 1', rowLimit: 1.5 },
     ])
       expect((await runToolContract(dataframeQueryTool, input)).isError).toBe(true);
   });
@@ -126,6 +184,7 @@ describe('dataframe tool contract', () => {
     const result = await runToolContract(dataframeQueryTool, {
       canvas_id: handle.canvas_id,
       sql: `SELECT T2M FROM ${handle.table} OFFSET 400`,
+      rowLimit: 1001,
     });
     expect(result.structuredContent).toMatchObject({
       rows: [],
@@ -133,6 +192,7 @@ describe('dataframe tool contract', () => {
       shownCount: 0,
       truncated: false,
       countSemantics: 'exact',
+      notice: 'The effective row limit is 1000; larger requested limits are capped.',
     });
     expect(
       result.content
@@ -143,6 +203,12 @@ describe('dataframe tool contract', () => {
   });
   it('drops the real table and formats both idempotent outcomes completely', async () => {
     const handle = await stage();
+    await fixture.service.present(
+      dataset(),
+      handle.canvas_id,
+      fixture.ctx,
+      'nasa_power_get_timeseries',
+    );
     for (const dropped of [true, false]) {
       const output = await dataframeDropTool.handler(
         dataframeDropTool.input.parse({ canvas_id: handle.canvas_id, table: handle.table }),

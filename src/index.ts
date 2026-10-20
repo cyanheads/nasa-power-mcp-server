@@ -19,8 +19,13 @@ import { searchParametersTool } from './mcp-server/tools/definitions/nasa-power-
 import { type CanvasService, initCanvasService } from './services/canvas/index.js';
 import { initPowerService, type PowerService } from './services/power/index.js';
 
-/** Native settings must match the bounded workload contract. */
+/**
+ * DataCanvas defaults to DuckDB (`CANVAS_PROVIDER_TYPE=none` disables it), and the
+ * native settings must match the bounded workload contract. Applied after
+ * `parseConfig()` loads `.env`, so a value set there still wins.
+ */
 const canvasDefaults = {
+  CANVAS_PROVIDER_TYPE: 'duckdb',
   CANVAS_DEFAULT_MEMORY_LIMIT_MB: '256',
   CANVAS_MAX_CANVASES_PER_TENANT: String(POWER_LIMITS.canvasesPerTenant),
   CANVAS_TTL_MS: String(POWER_LIMITS.canvasTtlMs),

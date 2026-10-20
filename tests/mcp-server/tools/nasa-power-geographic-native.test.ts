@@ -1,9 +1,65 @@
 /** @fileoverview Native staging of complete geographic data and provenance. @module tests/mcp-server/tools/nasa-power-geographic-native */
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+
+import { readFile } from 'node:fs/promises';
+import { createMockContext, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { expect, it, vi } from 'vitest';
+import { ComparisonOutputSchema } from '@/mcp-server/tools/definitions/comparison-contracts.js';
+import { compareLocationsTool } from '@/mcp-server/tools/definitions/nasa-power-compare-locations.tool.js';
 import { getRegionTool } from '@/mcp-server/tools/definitions/nasa-power-get-region.tool.js';
-import { initPowerService } from '@/services/power/index.js';
+import { initPowerService, PowerDatasetSchema } from '@/services/power/index.js';
 import { nativeFixture } from '../../services/canvas/fixture.js';
+
+it('presents the captured default ten-site comparison through the real tool and native staging', async () => {
+  const fixture = await nativeFixture();
+  const captured = ComparisonOutputSchema.omit({ rowCount: true, dataset: true }).parse(
+    JSON.parse(
+      await readFile(new URL('../../fixtures/comparison-full.json', import.meta.url), 'utf8'),
+    ),
+  );
+  const source = initPowerService({ config: { dataframeDropEnabled: true } });
+  vi.spyOn(source, 'validateRequest').mockResolvedValue();
+  vi.spyOn(source, 'point').mockImplementation(async (request) => {
+    const location = captured.locations.find(
+      (location) =>
+        location.latitude === request.latitude && location.longitude === request.longitude,
+    )!;
+    return {
+      ...PowerDatasetSchema.parse({
+        ...location,
+        rows: captured.rows.filter((row) => row.locationId === location.locationId),
+      }),
+      request,
+    };
+  });
+  try {
+    const result = await runToolContract(
+      compareLocationsTool,
+      compareLocationsTool.input.parse(captured.request),
+    );
+    expect(result.isError).not.toBe(true);
+    const output = ComparisonOutputSchema.parse(result.structuredContent);
+    expect(output.request).toEqual(captured.request);
+    expect(output.locations).toHaveLength(10);
+    expect(output.summaryDatasets!.buckets.rowCount).toBe(captured.summaries.length);
+    expect(output.summaryDatasets!.locations.rowCount).toBe(
+      captured.locations.reduce((sum, location) => sum + location.summaries.length, 0),
+    );
+    const text = result.content
+      .flatMap((block) => (block.type === 'text' ? [block.text] : []))
+      .join('\n');
+    expect(text.length).toBeLessThanOrEqual(40000);
+    expect(JSON.stringify(output).length).toBeLessThanOrEqual(40000);
+    for (const handle of [output.dataset!, ...Object.values(output.summaryDatasets!)]) {
+      expect(text).toContain(handle.table);
+      expect(text).toContain(handle.canvas_id);
+      expect(text).toContain(String(handle.rowCount));
+    }
+  } finally {
+    vi.restoreAllMocks();
+    source.dispose();
+    await fixture.close();
+  }
+});
 
 it('stages every native-grid row while preserving typed cell identity and complete provenance', async () => {
   const fixture = await nativeFixture();

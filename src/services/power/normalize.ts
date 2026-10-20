@@ -2,7 +2,7 @@
 import { z } from '@cyanheads/mcp-ts-core';
 import { POWER_LIMITS } from '../../config/server-config.js';
 import { powerError, shapeError } from './errors.js';
-import { PRESETS, TILTED_ALIAS } from './presets.js';
+import { presetParameters, TILTED_ALIAS } from './presets.js';
 import { summarizeCells, summarizeRows } from './summarize.js';
 import {
   type AccessMetadata,
@@ -68,7 +68,7 @@ export function requestedParameters(request: PowerRequest | RegionRequest): stri
   const codes =
     request.selection.mode === 'parameters'
       ? request.selection.parameters
-      : [...PRESETS[request.selection.preset]];
+      : presetParameters(request.selection.preset, request.temporalResolution);
   return [
     ...new Set([
       ...codes,

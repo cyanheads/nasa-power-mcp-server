@@ -14,6 +14,7 @@ import { type ObservationRow, powerError } from '../power/index.js';
 import { canvasError, safeCanvasError } from './errors.js';
 import { formatFaithfully } from './format.js';
 import {
+  type ComparisonDataset,
   type PresentableDataset,
   type PresentedDataset,
   type Provenance,
@@ -21,6 +22,13 @@ import {
   QueryResultSchema,
   type ScientificColumn,
 } from './types.js';
+
+type SummaryTable = {
+  key: 'buckets' | 'locations';
+  table: string;
+  rows: Record<string, string | number | boolean | null | undefined>[];
+  columns: ScientificColumn[];
+};
 
 type TableRecord = {
   bytes: number;
@@ -35,7 +43,6 @@ type CanvasRecord = {
   created: number;
   busy: boolean;
   pending: boolean;
-  retireWhenEmpty: boolean;
   tables: Map<string, TableRecord>;
 };
 type Producer = {
@@ -133,20 +140,88 @@ export class CanvasService {
     }
   }
 
-  /** Preserve the complete scientific envelope, staging full rows only on overflow. */
+  /** Stage comparison summaries with observations only when the scientific envelope overflows. */
+  presentComparison<T extends ComparisonDataset>(
+    dataset: T,
+    canvasId: string | undefined,
+    ctx: Context,
+    sourceTool: string,
+  ) {
+    if (this.fits({ ...dataset, rows: [], rowCount: dataset.rows.length, dataset: null }))
+      return this.present(dataset, canvasId, ctx, sourceTool);
+    const summaryRows = {
+      buckets: dataset.summaries.map((summary, summaryIndex) => ({ ...summary, summaryIndex })),
+      locations: dataset.locations
+        .flatMap((location) =>
+          location.summaries.map((summary) => ({ locationId: location.locationId, ...summary })),
+        )
+        .map((summary, summaryIndex) => ({ ...summary, summaryIndex })),
+    };
+    const strings = new Set([
+      'parameter',
+      'locationId',
+      'units',
+      'bucket',
+      'method',
+      'periodKind',
+      'firstReturnedKey',
+      'lastReturnedKey',
+      'lastValidPeriodKey',
+      'lastValidDate',
+    ]);
+    const booleans = new Set(['complete', 'windowClipped']);
+    const tables: SummaryTable[] = (['buckets', 'locations'] as const).map((key) => {
+      const rows = summaryRows[key];
+      const names = new Set(rows.flatMap((row) => Object.keys(row)));
+      return {
+        key,
+        table: `power_${randomUUID().replaceAll('-', '')}`,
+        rows,
+        columns: [...names].map((name) => ({
+          name,
+          type: strings.has(name)
+            ? 'VARCHAR'
+            : booleans.has(name)
+              ? 'BOOLEAN'
+              : name === 'summaryIndex'
+                ? 'INTEGER'
+                : 'DOUBLE',
+          nullable: true,
+        })),
+      };
+    });
+    const compact = {
+      ...dataset,
+      summaries: dataset.summaries.slice(0, 1),
+      locations: dataset.locations.map((location) => ({
+        ...location,
+        summaries: location.summaries.slice(0, 1),
+        summaryCount: location.summaries.length,
+      })),
+    };
+    return this.present(compact, canvasId, ctx, sourceTool, tables);
+  }
+
+  /** Preserve the scientific envelope with complete staging and bounded whole-row previews. */
   async present<T extends PresentableDataset>(
     dataset: T,
     canvasId: string | undefined,
     ctx: Context,
     sourceTool: string,
+    related: SummaryTable[] = [],
   ): Promise<PresentedDataset<T>> {
     this.assertRunning();
     ctx.signal.throwIfAborted();
     const serialized = JSON.stringify(dataset.rows);
     const bytes = Buffer.byteLength(serialized);
+    const relatedBytes = related.reduce(
+      (sum, item) => sum + Buffer.byteLength(JSON.stringify(item.rows)),
+      0,
+    );
     if (
       dataset.rows.length > POWER_LIMITS.rows ||
-      bytes > POWER_LIMITS.rowBytes ||
+      bytes + relatedBytes > POWER_LIMITS.rowBytes ||
+      related.some((item) => item.rows.length > POWER_LIMITS.rows) ||
       dataset.parameters.length > POWER_LIMITS.columns
     )
       throw powerError(
@@ -154,7 +229,7 @@ export class CanvasService {
         'Normalized dataset exceeds the analytical workload limit.',
       );
     const inline = { ...dataset, rowCount: dataset.rows.length, dataset: null };
-    if (this.fits(inline)) return inline;
+    if (!related.length && this.fits(inline)) return inline;
     if (!this.fits({ ...inline, rows: [] }))
       throw powerError(
         'dataset_limit',
@@ -162,19 +237,45 @@ export class CanvasService {
       );
     const columns = this.columns(dataset);
     const table = `power_${randomUUID().replaceAll('-', '')}`;
+    const handle = (
+      id: string,
+      expiresAt: string,
+      name: string,
+      rowCount: number,
+      schema: ScientificColumn[],
+    ) => ({
+      canvas_id: id,
+      table: name,
+      rowCount,
+      expiresAt,
+      columns: schema.map((column) => ({ ...column, nullable: column.nullable ?? true })),
+      describeTool: 'nasa_power_dataframe_describe' as const,
+      queryTool: 'nasa_power_dataframe_query' as const,
+    });
+    const relatedHandles = (id: string, expiresAt: string) => {
+      const buckets = related.find((item) => item.key === 'buckets');
+      const locations = related.find((item) => item.key === 'locations');
+      return buckets && locations
+        ? {
+            summaryDatasets: {
+              buckets: handle(id, expiresAt, buckets.table, buckets.rows.length, buckets.columns),
+              locations: handle(
+                id,
+                expiresAt,
+                locations.table,
+                locations.rows.length,
+                locations.columns,
+              ),
+            },
+          }
+        : {};
+    };
     const output = (id: string, expiresAt: string, preview: ObservationRow[]) => ({
       ...dataset,
+      ...relatedHandles(id, expiresAt),
       rows: preview,
       rowCount: dataset.rows.length,
-      dataset: {
-        canvas_id: id,
-        table,
-        rowCount: dataset.rows.length,
-        expiresAt,
-        columns: columns.map((column) => ({ ...column, nullable: column.nullable ?? true })),
-        describeTool: 'nasa_power_dataframe_describe' as const,
-        queryTool: 'nasa_power_dataframe_query' as const,
-      },
+      dataset: handle(id, expiresAt, table, dataset.rows.length, columns),
     });
     const preview = this.preview(dataset.rows, (rows) =>
       output('0000000000', new Date(this.now()).toISOString(), rows),
@@ -187,18 +288,55 @@ export class CanvasService {
       );
     await this.reconcile();
     ctx.signal.throwIfAborted();
-    const record = this.reserve(canvasId, ctx, table, bytes, columns, dataset, sourceTool);
+    const record = this.reserve(canvasId, ctx, table, bytes, columns, dataset, sourceTool, related);
     const expiry = (instance: CanvasInstance, info: TableInfo) =>
       new Date(
         Math.min(Date.parse(info.expiresAt ?? instance.expiresAt), Date.parse(instance.expiresAt)),
       ).toISOString();
-    const operation = this.stage(canvas, record, table, dataset.rows, ctx, (instance, info) => {
-      if (!this.fits(output(instance.canvasId, expiry(instance, info), preview)))
-        throw powerError(
-          'dataset_limit',
-          'The complete staged response exceeds the response budget.',
-        );
-    });
+    const operation = this.stage(
+      canvas,
+      record,
+      table,
+      dataset.rows,
+      ctx,
+      (instance, info) => {
+        const references = relatedHandles(instance.canvasId, expiry(instance, info));
+        for (const name of [table, ...related.map((item) => item.table)]) {
+          const staged = this.registration(record, name);
+          Object.assign(staged.provenance.envelope, references);
+          const count =
+            name === table
+              ? dataset.rows.length
+              : related.find((item) => item.table === name)?.rows.length;
+          if (
+            related.length > 0 &&
+            !this.fits({
+              canvas_id: instance.canvasId,
+              expiresAt: instance.expiresAt,
+              tables: [
+                {
+                  table: name,
+                  rowCount: count,
+                  expiresAt: expiry(instance, info),
+                  columns: staged.columns,
+                  provenance: staged.provenance,
+                },
+              ],
+            })
+          )
+            throw powerError(
+              'dataset_limit',
+              'Complete single-table provenance exceeds the response budget.',
+            );
+        }
+        if (!this.fits(output(instance.canvasId, expiry(instance, info), preview)))
+          throw powerError(
+            'dataset_limit',
+            'The complete staged response exceeds the response budget.',
+          );
+      },
+      related,
+    );
     this.operations.add(operation);
     try {
       const { instance, info } = await operation;
@@ -257,12 +395,14 @@ export class CanvasService {
   async query(canvasId: string, input: { sql: string; rowLimit?: number }, ctx: Context) {
     if (
       input.sql.length > POWER_LIMITS.sqlCharacters ||
-      (input.rowLimit !== undefined &&
-        (!Number.isInteger(input.rowLimit) ||
-          input.rowLimit < 1 ||
-          input.rowLimit > POWER_LIMITS.queryRows))
+      (input.rowLimit !== undefined && (!Number.isInteger(input.rowLimit) || input.rowLimit < 1))
     )
       throw canvasError('query_limit', 'SQL length or row limit exceeds the query bound.');
+    const rowLimit = Math.min(input.rowLimit ?? 100, POWER_LIMITS.queryRows);
+    const notice =
+      input.rowLimit !== undefined && input.rowLimit > rowLimit
+        ? 'The effective row limit is 1000; larger requested limits are capped.'
+        : undefined;
     if (this.queryCount >= POWER_LIMITS.queries)
       throw canvasError('canvas_capacity_exhausted', 'Analytical query concurrency is exhausted.');
     this.queryCount++;
@@ -274,7 +414,7 @@ export class CanvasService {
           AbortSignal.timeout(POWER_LIMITS.queryMs),
         ]);
         const result = await instance.query(input.sql, {
-          rowLimit: input.rowLimit ?? 100,
+          rowLimit,
           denySystemCatalogs: true,
           signal,
         });
@@ -287,8 +427,9 @@ export class CanvasService {
           truncated: result.truncated ?? false,
           countSemantics: result.truncated ? 'materialized_prefix' : 'exact',
         });
-        if (!this.fits(output))
+        if (!this.fits(output, notice))
           throw canvasError('query_limit', 'Projected SQL values exceed the response budget.');
+        if (notice) ctx.enrich.notice(notice);
         return output;
       });
     } finally {
@@ -308,6 +449,10 @@ export class CanvasService {
         if (staged) staged.cleanup = true;
         const dropped = await instance.drop(input.table);
         await this.removeMetadata(record, input.table);
+        if (record.tables.size === 0 && (await instance.describe()).length === 0) {
+          await this.canvas?.drop(record.id, record.ctx);
+          await this.confirmAbsent(record);
+        }
         return { canvas_id: canvasId, table: input.table, dropped };
       },
       true,
@@ -398,10 +543,12 @@ export class CanvasService {
     return schema;
   }
 
-  private fits(output: object): boolean {
+  private fits(output: object, notice?: string): boolean {
     return (
-      JSON.stringify(output).length <= POWER_LIMITS.inlineCharacters &&
-      formatFaithfully(output).reduce((sum, block) => sum + block.text.length, 0) <=
+      JSON.stringify(notice === undefined ? output : { ...output, notice }).length <=
+        POWER_LIMITS.inlineCharacters &&
+      formatFaithfully(output).reduce((sum, block) => sum + block.text.length, 0) +
+        (notice === undefined ? 0 : `\n\n> ${notice}`.length) <=
         POWER_LIMITS.inlineCharacters
     );
   }
@@ -428,6 +575,7 @@ export class CanvasService {
     columns: ScientificColumn[],
     dataset: T,
     sourceTool: string,
+    related: SummaryTable[] = [],
   ): CanvasRecord {
     this.assertRunning();
     const records = [...this.records.values()];
@@ -441,13 +589,27 @@ export class CanvasService {
         0,
       );
     const tenantRecords = records.filter((item) => item.tenant === ctx.tenantId);
+    const relatedBytes = related.reduce(
+      (sum, item) => sum + Buffer.byteLength(JSON.stringify(item.rows)),
+      0,
+    );
     if (
-      retained(records) + bytes > POWER_LIMITS.processRetainedBytes ||
-      retained(tenantRecords) + bytes > POWER_LIMITS.tenantRetainedBytes ||
-      (record && (record.busy || record.tables.size >= POWER_LIMITS.tablesPerCanvas)) ||
-      (!record &&
-        (records.length >= POWER_LIMITS.canvasesPerProcess ||
-          tenantRecords.length >= POWER_LIMITS.canvasesPerTenant))
+      !record &&
+      (records.length >= POWER_LIMITS.canvasesPerProcess ||
+        tenantRecords.length >= POWER_LIMITS.canvasesPerTenant)
+    )
+      throw canvasError(
+        'canvas_capacity_exhausted',
+        'The process or tenant canvas-count limit is exhausted.',
+        this.config.dataframeDropEnabled
+          ? 'Reuse an explicit live canvas_id, drop all tables from a canvas, or wait for canvas expiry.'
+          : 'Reuse an explicit live canvas_id, or wait for canvas expiry.',
+      );
+    if (
+      retained(records) + bytes + relatedBytes > POWER_LIMITS.processRetainedBytes ||
+      retained(tenantRecords) + bytes + relatedBytes > POWER_LIMITS.tenantRetainedBytes ||
+      (record &&
+        (record.busy || record.tables.size + 1 + related.length > POWER_LIMITS.tablesPerCanvas))
     )
       throw canvasError(
         'canvas_capacity_exhausted',
@@ -466,11 +628,17 @@ export class CanvasService {
       created: this.now(),
       busy: false,
       pending: true,
-      retireWhenEmpty: false,
       tables: new Map(),
     };
     record.busy = true;
     record.tables.set(table, { bytes, columns, provenance, cleanup: true });
+    for (const item of related)
+      record.tables.set(item.table, {
+        bytes: Buffer.byteLength(JSON.stringify(item.rows)),
+        columns: item.columns,
+        provenance: ProvenanceSchema.parse(provenance),
+        cleanup: true,
+      });
     this.records.set(record.id, record);
     return record;
   }
@@ -482,12 +650,13 @@ export class CanvasService {
     rows: ObservationRow[],
     ctx: Context,
     validate: (instance: CanvasInstance, info: TableInfo) => void,
+    related: SummaryTable[] = [],
   ): Promise<{ instance: CanvasInstance; info: TableInfo }> {
     let instance: CanvasInstance | undefined;
-    let registrationStarted = false;
+    const registrations = [{ table, rows }, ...related];
+    const started = new Set<string>();
     let finalizing = false;
-    const staged = record.tables.get(table);
-    if (!staged) throw new Error('Missing reserved registration');
+    let info: TableInfo | undefined;
     try {
       instance = await canvas.acquire(record.pending ? undefined : record.id, ctx, {
         signal: ctx.signal,
@@ -503,41 +672,59 @@ export class CanvasService {
           JsonRpcErrorCode.Conflict,
           'Generated analytical table name already exists.',
         );
-      const schema: ColumnSchema[] = staged.columns.map(({ name, type, nullable }) => ({
-        name,
-        type,
-        nullable: nullable ?? true,
-      }));
-      registrationStarted = true;
-      await instance.registerTable(table, rows, {
-        schema,
-        ttlMs: POWER_LIMITS.tableTtlMs,
-        signal: ctx.signal,
-      });
-      ctx.signal.throwIfAborted();
-      await this.storage.set(this.key(record, table), staged.provenance, ctx, {
-        ttl: POWER_LIMITS.canvasAbsoluteTtlMs / 1_000,
-      });
-      ctx.signal.throwIfAborted();
-      const info = (await instance.describe({ tableName: table }))[0];
-      if (!info || info.rowCount !== rows.length)
-        throw new McpError(
-          JsonRpcErrorCode.DatabaseError,
-          'Registered table does not contain the complete dataset.',
-        );
+      for (const registration of registrations) {
+        const entry = this.registration(record, registration.table);
+        const schema: ColumnSchema[] = entry.columns.map(({ name, type, nullable }) => ({
+          name,
+          type,
+          nullable: nullable ?? true,
+        }));
+        started.add(registration.table);
+        await instance.registerTable(registration.table, registration.rows, {
+          schema,
+          ttlMs: POWER_LIMITS.tableTtlMs,
+          signal: ctx.signal,
+        });
+        ctx.signal.throwIfAborted();
+        const registered = (await instance.describe({ tableName: registration.table }))[0];
+        if (!registered || registered.rowCount !== registration.rows.length)
+          throw new McpError(
+            JsonRpcErrorCode.DatabaseError,
+            'Registered table does not contain the complete dataset.',
+          );
+        if (registration.table === table) info = registered;
+      }
+      if (!info) throw new Error('Missing registered observation table');
       finalizing = true;
       validate(instance, info);
-      staged.cleanup = false;
+      finalizing = false;
+      for (const registration of registrations) {
+        const entry = this.registration(record, registration.table);
+        await this.storage.set(this.key(record, registration.table), entry.provenance, ctx, {
+          ttl: POWER_LIMITS.canvasAbsoluteTtlMs / 1_000,
+        });
+        ctx.signal.throwIfAborted();
+      }
+      for (const registration of registrations)
+        this.registration(record, registration.table).cleanup = false;
       return { instance, info };
     } catch (error) {
       if (!instance) {
         if (record.pending) this.records.delete(record.id);
       } else {
-        if (instance.isNew) record.retireWhenEmpty = true;
+        for (const registration of registrations) {
+          try {
+            if (started.has(registration.table))
+              await this.canvas?.getProvider().drop(record.id, registration.table, record.ctx);
+            await this.removeMetadata(record, registration.table);
+          } catch (cleanupError) {
+            record.ctx.log.error(
+              'Analytical table cleanup deferred; reservations retained.',
+              cleanupError instanceof Error ? cleanupError : new Error(String(cleanupError)),
+            );
+          }
+        }
         try {
-          if (registrationStarted)
-            await this.canvas?.getProvider().drop(record.id, table, record.ctx);
-          await this.removeMetadata(record, table);
           if (instance.isNew && record.tables.size === 0) {
             await canvas.drop(record.id, record.ctx);
             await this.confirmAbsent(record);
@@ -554,6 +741,12 @@ export class CanvasService {
     } finally {
       record.busy = false;
     }
+  }
+
+  private registration(record: CanvasRecord, table: string): TableRecord {
+    const entry = record.tables.get(table);
+    if (!entry) throw new Error('Missing reserved registration');
+    return entry;
   }
 
   private async operate<T>(
@@ -634,7 +827,7 @@ export class CanvasService {
           if (!actual.some((info) => info.name === table)) await this.removeMetadata(record, table);
         }
         if (
-          (record.retireWhenEmpty && record.tables.size === 0) ||
+          (record.tables.size === 0 && actual.length === 0) ||
           this.now() - record.created >= POWER_LIMITS.canvasAbsoluteTtlMs
         ) {
           await this.canvas.drop(record.id, record.ctx);

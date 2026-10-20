@@ -10,7 +10,7 @@ import { ComparisonOutputSchema, presentComparison } from './comparison-contract
 export const compareLocationsTool = tool('nasa_power_compare_locations', {
   title: 'Compare NASA POWER locations',
   description:
-    'Compare 2–10 labeled coordinates with a shared parameter selection and window; climatology is the default resolution. Duplicate labels retain separate input-position identities. Returns per-site provenance and valid-only annual/seasonal summaries; operational site failures preserve successes. Optional numeric sort uses observation means, monthly annual records or climatology ANN, with nulls last and stable ties; differing or unknown units cannot sort. Oversized raw observations stage completely in a canvas.',
+    'Compare 2–10 labeled coordinates with a shared parameter selection and window; climatology is the default resolution. Duplicate labels retain separate input-position identities. Returns per-site provenance and valid-only annual/seasonal summaries; operational site failures preserve successes. Optional numeric sort uses observation means, monthly annual records or climatology ANN, with nulls last and stable ties; differing or unknown units cannot sort. Oversized observations and summaries stage completely; summaryDatasets handles and summaryIndex preserve complete ordered summary arrays.',
   annotations: { readOnlyHint: true, openWorldHint: true },
   input: z.discriminatedUnion('temporalResolution', [
     CompareRequestSchema.options[0].extend({

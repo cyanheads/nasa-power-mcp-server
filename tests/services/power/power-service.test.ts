@@ -171,7 +171,6 @@ describe('PowerService HTTP contract', () => {
     [{ endDate: '2027-01-01' }, 'invalid_window'],
     [{ windElevation: 10 }, 'invalid_correction'],
     [{ selection: { mode: 'parameters', parameters: ['PSC'] } }, 'invalid_correction'],
-    [{ selection: { mode: 'parameters', parameters: ['t2m', ' T2M '] } }, 'unsupported_parameter'],
     [
       {
         temporalResolution: 'hourly',

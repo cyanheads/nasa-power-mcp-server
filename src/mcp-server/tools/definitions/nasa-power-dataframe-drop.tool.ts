@@ -9,7 +9,7 @@ import { getCanvasService } from '@/services/canvas/index.js';
 const definition = tool('nasa_power_dataframe_drop', {
   title: 'Remove a staged POWER table',
   description:
-    'Remove only the named table in the supplied canvas. An absent table returns dropped false. Available only when explicit dataframe removal is enabled.',
+    'Remove only the named table in the supplied canvas. An absent table returns dropped false while other tables keep the canvas alive. Removing the final table retires its token; later calls return canvas_not_found. Available only when explicit dataframe removal is enabled.',
   annotations: {
     readOnlyHint: false,
     destructiveHint: true,

@@ -60,7 +60,7 @@ export function powerError(
     describePowerError(message, data),
     {
       reason,
-      retryable: reason === 'request_queue_full',
+      retryable: limited,
       recovery: { hint: RECOVERIES[reason] },
       ...data,
     },

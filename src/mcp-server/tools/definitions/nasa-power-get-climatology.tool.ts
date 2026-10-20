@@ -2,7 +2,7 @@
 import { tool } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { formatFaithfully } from '@/services/canvas/format.js';
-import { PowerRequestSchema } from '@/services/power/index.js';
+import { NormalizedClimatologyRequestSchema, PowerRequestSchema } from '@/services/power/index.js';
 import { PointOutputSchema, presentPoint } from './point-contracts.js';
 /** Retrieve source observations with complete scientific provenance. */
 export const getClimatologyTool = tool('nasa_power_get_climatology', {
@@ -11,7 +11,11 @@ export const getClimatologyTool = tool('nasa_power_get_climatology', {
     'Retrieve complete monthly and annual climatology at latitude/longitude. Optionally supply both startYear and endYear; omitted years use the source product range. Use nasa_power_list_reference for presets and tilted solar aliases. All returned records remain inline, including orientation text.',
   annotations: { readOnlyHint: true, openWorldHint: true },
   input: PowerRequestSchema.options[3].omit({ temporalResolution: true }),
-  output: PointOutputSchema,
+  output: PointOutputSchema.extend({
+    request: NormalizedClimatologyRequestSchema.describe(
+      'Normalized climatology request and corrections',
+    ),
+  }),
   errors: [
     {
       reason: 'unsupported_parameter',
@@ -88,13 +92,17 @@ export const getClimatologyTool = tool('nasa_power_get_climatology', {
       retryable: true,
     },
   ],
-  handler(input, ctx) {
-    return presentPoint(
+  async handler(input, ctx) {
+    const output = await presentPoint(
       { ...input, temporalResolution: 'climatology' },
       undefined,
       ctx,
       'nasa_power_get_climatology',
     );
+    return {
+      ...output,
+      request: { ...output.request, temporalResolution: 'climatology' as const },
+    };
   },
   format: formatFaithfully,
 });

@@ -113,7 +113,7 @@ describe('published and effective parameter caps', () => {
       input([...codes(13), 'PSC', 'WSC'], {
         siteElevation: 0,
         windElevation: 50,
-        windSurface: 'grass',
+        windSurface: 'airportgrass',
       }),
     );
     expect(requestedParameters(hourly)).toHaveLength(15);
@@ -124,7 +124,7 @@ describe('published and effective parameter caps', () => {
         temporalResolution: 'daily',
         siteElevation: 0,
         windElevation: 50,
-        windSurface: 'grass',
+        windSurface: 'airportgrass',
       }),
     );
     expect(requestedParameters(daily)).toHaveLength(20);

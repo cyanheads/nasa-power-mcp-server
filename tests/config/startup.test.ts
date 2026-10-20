@@ -61,4 +61,17 @@ describe('DuckDB startup workload defaults', () => {
     expect(child.status).toBe(1);
     expect(child.stderr).toContain('NASA POWER requires CANVAS_DEFAULT_MEMORY_LIMIT_MB=256');
   }, 25_000);
+
+  it('defaults a blank provider to DuckDB, so its fixed limits apply', () => {
+    const child = boot({ CANVAS_PROVIDER_TYPE: '', CANVAS_DEFAULT_MEMORY_LIMIT_MB: '128' });
+    expect(child.error, child.stderr).toBeUndefined();
+    expect(child.status).toBe(1);
+    expect(child.stderr).toContain('NASA POWER requires CANVAS_DEFAULT_MEMORY_LIMIT_MB=256');
+  }, 25_000);
+
+  it('keeps an explicit none provider without DuckDB limits', () => {
+    const child = boot({ CANVAS_PROVIDER_TYPE: 'none', CANVAS_DEFAULT_MEMORY_LIMIT_MB: '128' });
+    expect(child.error, child.stderr).toBeUndefined();
+    expect(child.status, child.stderr).toBe(0);
+  }, 25_000);
 });

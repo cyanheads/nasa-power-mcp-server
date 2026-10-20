@@ -12,8 +12,8 @@
     "CANVAS_PROVIDER_TYPE": {
       "type": "string",
       "title": "Analytical workspace",
-      "description": "Use none for inline data or duckdb for larger staged datasets and SQL on supported platforms.",
-      "default": "none"
+      "description": "duckdb (default) stages larger datasets for SQL on supported platforms; none keeps results inline.",
+      "default": "duckdb"
     },
     "NASA_POWER_DATAFRAME_DROP_ENABLED": {
       "type": "string",

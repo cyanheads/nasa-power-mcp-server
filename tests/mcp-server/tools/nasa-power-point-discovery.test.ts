@@ -61,6 +61,165 @@ function failure(result: Awaited<ReturnType<typeof runToolContract>>, reason: st
 }
 
 describe('point tool consumption contracts', () => {
+  it('publishes canonical wind long names and resolution-specific preset expansions on both paths', async () => {
+    const wind = await runToolContract(listReferenceTool, { topic: 'wind_surfaces' });
+    expect(wind.structuredContent).toMatchObject({
+      entries: expect.arrayContaining([
+        expect.objectContaining({ code: 'airportgrass', description: 'Airport: flat rough grass' }),
+        expect.objectContaining({
+          code: 'vegtype_1',
+          description: '35-m broadleaf-evergreen trees (70% coverage)',
+        }),
+        expect.objectContaining({ code: 'airportice', aliases: ['airport_ice', 'airport ice'] }),
+      ]),
+    });
+    const windEntries = (
+      wind.structuredContent as { entries: { code: string; description: string }[] }
+    ).entries;
+    expect(windEntries.filter((entry) => !['WSC', 'PSC'].includes(entry.code))).toHaveLength(17);
+    for (const entry of windEntries) expect(text(wind)).toContain(entry.description);
+    const presets = await runToolContract(listReferenceTool, { topic: 'presets' });
+    expect(presets.structuredContent).toMatchObject({
+      entries: expect.arrayContaining([
+        expect.objectContaining({
+          code: 'agroclimatology',
+          resolutions: ['hourly'],
+          parameters: ['T2M', 'PRECTOTCORR', 'GWETROOT', 'GWETPROF', 'ALLSKY_SFC_SW_DWN'],
+        }),
+        expect.objectContaining({
+          code: 'agroclimatology',
+          resolutions: ['daily', 'monthly', 'climatology'],
+          parameters: [
+            'T2M',
+            'PRECTOTCORR',
+            'GWETROOT',
+            'GWETPROF',
+            'ALLSKY_SFC_SW_DWN',
+            'T2M_MAX',
+            'T2M_MIN',
+          ],
+        }),
+      ]),
+    });
+    expect(text(presets)).toContain('T2M_MIN');
+    expect(text(presets)).toContain('not reconstructed daily records');
+  });
+  it.each([
+    'airportgrass',
+    'airportice',
+    'seaice',
+    'openwater',
+    ...Array.from({ length: 12 }, (_, i) => `vegtype_${i + 1}`),
+    'vegtype_20',
+  ])('sends canonical wind surface %s unchanged on both paths', async (windSurface) => {
+    const result = await settle(
+      runRaw(getTimeseriesTool, { ...input, windElevation: 100, windSurface }),
+    );
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({ request: { windSurface } });
+    expect(new URL(String(fetcher.mock.calls.at(-1)?.[0])).searchParams.get('wind-surface')).toBe(
+      windSurface,
+    );
+    expect(text(result)).toContain(windSurface);
+  });
+  it('deduplicates normalized scientific codes without losing request provenance', async () => {
+    const result = await settle(
+      runToolContract(getTimeseriesTool, {
+        ...input,
+        selection: { mode: 'parameters', parameters: ['t2m', ' T2M ', 'rh2m'] },
+      }),
+    );
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      request: { selection: { parameters: ['T2M', 'RH2M'] } },
+    });
+    expect(new URL(String(fetcher.mock.calls.at(-1)?.[0])).searchParams.get('parameters')).toBe(
+      'T2M,RH2M',
+    );
+    expect(text(result)).toContain('RH2M');
+  });
+  it.each([0, 100, 250])(
+    'clamps discovery limits and discloses the effective cap at offset %s',
+    async (offset) => {
+      entries = Object.fromEntries(Array.from({ length: 120 }, (_, i) => [`P${i}`, {}]));
+      const result = await runRaw(searchParametersTool, { limit: 101, offset });
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toMatchObject({
+        limit: 100,
+        total: 120,
+        offset,
+        entries: expect.any(Array),
+        hasMore: offset === 0,
+        truncated: offset === 0,
+        notice: 'The effective entry limit is 100; larger requested limits are capped.',
+      });
+      expect((result.structuredContent as { entries: unknown[] }).entries).toHaveLength(
+        offset === 0 ? 100 : offset === 100 ? 20 : 0,
+      );
+      expect(text(result)).toContain(
+        'The effective entry limit is 100; larger requested limits are capped.',
+      );
+    },
+  );
+  it('marks upstream 429 retryable for the caller while stopping this call', async () => {
+    fetcher.mockImplementationOnce(async () =>
+      Response.json({ messages: ['slow down'] }, { status: 429, headers: { 'Retry-After': '2' } }),
+    );
+    const result = await settle(runToolContract(searchParametersTool, {}));
+    failure(result, 'upstream_rate_limited');
+    expect(result.structuredContent).toMatchObject({
+      error: { data: { retryable: true, status: 429, retryAfter: '2', messages: ['slow down'] } },
+    });
+    expect(text(result)).toContain('slow down');
+    expect(text(result)).not.toContain('not retryable');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+  it.each(
+    (['RE', 'SB', 'AG'] as const).flatMap((community) =>
+      (['hourly', 'daily', 'monthly', 'climatology'] as const).map((temporalResolution) => ({
+        community,
+        temporalResolution,
+      })),
+    ),
+  )(
+    'uses the exact agroclimatology expansion for $community/$temporalResolution',
+    async ({ community, temporalResolution }) => {
+      const extremes = temporalResolution === 'hourly' ? {} : { T2M_MAX: {}, T2M_MIN: {} };
+      entries = { ...dictionary, ...extremes };
+      body = payload(extremes);
+      const window =
+        temporalResolution === 'daily' || temporalResolution === 'hourly'
+          ? { startDate: '2024-01-01', endDate: '2024-01-02' }
+          : { startYear: 2024, endYear: 2024 };
+      const result = await settle(
+        runRaw(temporalResolution === 'climatology' ? getClimatologyTool : getTimeseriesTool, {
+          latitude: 47,
+          longitude: -122,
+          community,
+          ...(temporalResolution === 'climatology' ? {} : { temporalResolution }),
+          ...window,
+          selection: { mode: 'preset', preset: 'agroclimatology' },
+        }),
+      );
+      expect(result.isError).not.toBe(true);
+      expect(
+        new URL(String(fetcher.mock.calls.at(-1)?.[0])).searchParams.get('parameters')?.split(','),
+      ).toEqual([
+        'T2M',
+        'PRECTOTCORR',
+        'GWETROOT',
+        'GWETPROF',
+        'ALLSKY_SFC_SW_DWN',
+        ...(temporalResolution === 'hourly' ? [] : ['T2M_MAX', 'T2M_MIN']),
+      ]);
+      if (temporalResolution !== 'hourly') {
+        expect(text(result)).toContain('T2M_MAX');
+        expect(result.structuredContent).toMatchObject({
+          parameters: expect.arrayContaining([expect.objectContaining({ code: 'T2M_MAX' })]),
+        });
+      }
+    },
+  );
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-10-19T00:00:00Z'));
@@ -282,6 +441,7 @@ describe('point tool consumption contracts', () => {
   it.each([
     [{ endDate: '2023-12-31' }, 'invalid_window'],
     [{ windElevation: 50 }, 'invalid_correction'],
+    [{ windElevation: 100, windSurface: 'grass' }, 'invalid_arguments'],
     [{ selection: { mode: 'parameters', parameters: ['PSC'] } }, 'invalid_correction'],
     [{ selection: { mode: 'parameters', parameters: ['UNKNOWN'] } }, 'unsupported_parameter'],
     [
@@ -592,8 +752,9 @@ describe('point tool consumption contracts', () => {
   });
 
   it.each([
-    { limit: 101 },
+    { limit: 1.5 },
     { limit: 0 },
+    { limit: -1 },
     { offset: -1 },
     { filter: 'x'.repeat(257) },
     { community: 're' },

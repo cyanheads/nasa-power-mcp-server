@@ -163,7 +163,7 @@ describe('CanvasService with DuckDB', () => {
       truncated: false,
       countSemantics: 'exact',
     });
-    for (const rowLimit of [0, 1001, 1.5])
+    for (const rowLimit of [0, -1, 1.5])
       await expect(
         fixture.service.query(handle.canvas_id, { sql: 'SELECT 1', rowLimit }, fixture.ctx),
       ).rejects.toMatchObject({ data: { reason: 'query_limit' } });
@@ -201,13 +201,20 @@ describe('CanvasService with DuckDB', () => {
   });
   it('drops only the named table idempotently and removes its provenance', async () => {
     const handle = (await stage()).dataset!;
+    const retained = (
+      await fixture.service.present(dataset(), handle.canvas_id, fixture.ctx, source)
+    ).dataset!;
     expect(
       await fixture.service.drop(handle.canvas_id, { table: handle.table }, fixture.ctx),
     ).toMatchObject({ dropped: true });
     expect(
       await fixture.service.drop(handle.canvas_id, { table: handle.table }, fixture.ctx),
     ).toMatchObject({ dropped: false });
-    expect((await fixture.service.describe(handle.canvas_id, {}, fixture.ctx)).tables).toEqual([]);
+    expect(
+      (await fixture.service.describe(handle.canvas_id, {}, fixture.ctx)).tables.map(
+        (item) => item.table,
+      ),
+    ).toEqual([retained.table]);
     await expect(
       fixture.service.describe(handle.canvas_id, { table: handle.table }, fixture.ctx),
     ).rejects.toMatchObject({ data: { reason: 'missing_table' } });
@@ -240,7 +247,9 @@ describe('CanvasService with DuckDB', () => {
     fixture.advance(POWER_LIMITS.tableTtlMs + 1);
     await fixture.registry.sweep();
     await fixture.service.reconcile();
-    expect((await fixture.service.describe(handle.canvas_id, {}, fixture.ctx)).tables).toEqual([]);
+    await expect(fixture.service.describe(handle.canvas_id, {}, fixture.ctx)).rejects.toMatchObject(
+      { data: { reason: 'canvas_not_found' } },
+    );
     fixture.advance(POWER_LIMITS.canvasAbsoluteTtlMs);
     await fixture.service.reconcile();
     await expect(fixture.service.describe(handle.canvas_id, {}, fixture.ctx)).rejects.toMatchObject(
@@ -260,6 +269,24 @@ describe('CanvasService with DuckDB', () => {
       8,
     );
   });
+  it.each([false, true])(
+    'offers only available canvas-count recovery when drop is %s',
+    async (dropEnabled) => {
+      await fixture.close();
+      fixture = await nativeFixture(dropEnabled);
+      for (let i = 0; i < POWER_LIMITS.canvasesPerTenant; i++) await stage();
+      await expect(stage()).rejects.toMatchObject({
+        data: {
+          reason: 'canvas_capacity_exhausted',
+          recovery: {
+            hint: dropEnabled
+              ? 'Reuse an explicit live canvas_id, drop all tables from a canvas, or wait for canvas expiry.'
+              : 'Reuse an explicit live canvas_id, or wait for canvas expiry.',
+          },
+        },
+      });
+    },
+  );
   it('refuses disabled native staging and over-bound rows without partial success', async () => {
     const service = createCanvasService({
       storage: fixture.storage,

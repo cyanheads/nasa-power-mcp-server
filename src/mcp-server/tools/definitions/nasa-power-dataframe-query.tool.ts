@@ -22,11 +22,16 @@ export const dataframeQueryTool = tool('nasa_power_dataframe_query', {
       .number()
       .int()
       .min(1)
-      .max(POWER_LIMITS.queryRows)
       .default(100)
-      .describe('Maximum returned rows, from 1 through 1,000'),
+      .describe('Positive maximum row count; values above 1,000 use an effective cap of 1,000'),
   }),
   output: QueryResultSchema,
+  enrichment: {
+    notice: z
+      .string()
+      .optional()
+      .describe('Effective output row cap when the requested limit is larger'),
+  },
   errors: [
     {
       reason: 'canvas_unavailable',

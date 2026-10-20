@@ -2,6 +2,16 @@
 import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 
 const serviceErrors = new WeakSet<McpError>();
+/** Native messages already redact configured directories. Scan at most 2,048 characters. */
+function diagnostic(error: McpError): string {
+  const bounded = error.message.slice(0, 2048);
+  const end = bounded.search(/[\r\n]/);
+  const line = end === -1 ? bounded : bounded.slice(0, end);
+  return line
+    .replace(/(["'])(?:[A-Za-z]:[\\/]|\/|\\\\)[^"'\r\n]*\1/g, '$1[path]$1')
+    .replace(/(?:[A-Za-z]:[\\/]|\/|\\\\)[^\s"'<>]*/g, '[path]')
+    .slice(0, 1024);
+}
 const definitions = {
   canvas_required: [
     JsonRpcErrorCode.ConfigurationError,
@@ -56,31 +66,21 @@ export function safeCanvasError(error: unknown, drop = false): never {
     );
   if (reason === 'canvas_capacity_exhausted')
     throw canvasError(reason, 'Analytical workspace capacity is exhausted.');
-  if (reason === 'missing_table') throw canvasError(reason, 'The requested table is absent.');
+  if (reason === 'missing_table') throw canvasError(reason, diagnostic(error));
   if (reason === 'invalid_sql' || reason === 'sql_parse_error')
-    throw new McpError(
-      JsonRpcErrorCode.ValidationError,
-      'SQL syntax or column binding is invalid.',
-      {
-        reason: 'invalid_sql',
-        recovery: {
-          hint: 'Check SQL syntax and column names against nasa_power_dataframe_describe using the same canvas_id.',
-        },
+    throw new McpError(JsonRpcErrorCode.ValidationError, diagnostic(error), {
+      reason: 'invalid_sql',
+      recovery: {
+        hint: 'Check SQL syntax and column names against nasa_power_dataframe_describe using the same canvas_id.',
       },
-      { cause: error },
-    );
+    });
   if (reason === 'sql_execution_error')
-    throw new McpError(
-      error.code,
-      'SQL could not convert or evaluate the staged values.',
-      {
-        reason,
-        recovery: {
-          hint: 'Use TRY_CAST or filter the offending values before converting them, then retry the SELECT.',
-        },
+    throw new McpError(error.code, diagnostic(error), {
+      reason,
+      recovery: {
+        hint: 'Use TRY_CAST or filter the offending values before converting them, then retry the SELECT.',
       },
-      { cause: error },
-    );
+    });
   if (
     typeof reason === 'string' &&
     [
@@ -94,19 +94,19 @@ export function safeCanvasError(error: unknown, drop = false): never {
   )
     throw new McpError(
       error.code,
-      'The statement is outside the read-only analytical surface.',
+      reason === 'denied_function'
+        ? diagnostic(error)
+        : 'The statement is outside the read-only analytical surface.',
       {
         reason,
         recovery: {
           hint: 'Send one read-only SELECT against tables shown by nasa_power_dataframe_describe; remove external data and system catalog access.',
         },
       },
-      { cause: error },
     );
   throw new McpError(
     error.code,
     'The analytical engine could not complete this operation.',
-    undefined,
-    { cause: error },
+    reason === 'cancelled' ? { reason } : undefined,
   );
 }

@@ -3,7 +3,7 @@ import { tool, z } from '@cyanheads/mcp-ts-core';
 import { config } from '@cyanheads/mcp-ts-core/config';
 import { getServerConfig, POWER_LIMITS } from '@/config/server-config.js';
 import { formatFaithfully } from '@/services/canvas/format.js';
-import { PRESETS, TILTED_ALIAS } from '@/services/power/index.js';
+import { PRESETS, presetParameters, TILTED_ALIAS, WIND_SURFACES } from '@/services/power/index.js';
 
 const TopicSchema = z
   .enum(['presets', 'communities', 'coverage', 'missing_data', 'wind_surfaces', 'dataframes'])
@@ -49,16 +49,21 @@ export const listReferenceTool = tool('nasa_power_list_reference', {
     const entries: z.infer<typeof EntrySchema>[] = [];
     const guidance: string[] = [];
     if (topic === 'presets') {
-      for (const [code, parameters] of Object.entries(PRESETS))
-        entries.push({
-          code,
-          parameters: [...parameters],
-          resolutions: code === 'building_hvac' ? allResolutions.slice(1) : allResolutions,
-          description:
-            code === 'water_balance'
-              ? 'Related precipitation, evapotranspiration and soil-wetness observations; incompatible units prohibit direct subtraction.'
-              : 'Exact parameter group, validated against the selected community/resolution dictionary at retrieval.',
-        });
+      for (const code of Object.keys(PRESETS) as (keyof typeof PRESETS)[])
+        for (const resolutions of code === 'agroclimatology'
+          ? [['hourly'], allResolutions.slice(1)]
+          : [code === 'building_hvac' ? allResolutions.slice(1) : allResolutions])
+          entries.push({
+            code,
+            parameters: presetParameters(code, resolutions.includes('hourly') ? 'hourly' : 'daily'),
+            resolutions,
+            description:
+              code === 'water_balance'
+                ? 'Related precipitation, evapotranspiration and soil-wetness observations; incompatible units prohibit direct subtraction.'
+                : code === 'agroclimatology' && resolutions[0] !== 'hourly'
+                  ? 'Includes source-period maximum and minimum temperature; monthly and climatology extremes are source aggregates, not reconstructed daily records or calculated growing degree days.'
+                  : 'Exact parameter group, validated against the selected community/resolution dictionary at retrieval.',
+          });
       entries.push({
         code: TILTED_ALIAS,
         resolutions: ['climatology'],
@@ -151,21 +156,15 @@ export const listReferenceTool = tool('nasa_power_list_reference', {
         'No complete requested calendar is synthesized. All-null statistics remain null. Annual records never enter monthly means; orientation strings have no numeric summary.',
       );
     } else if (topic === 'wind_surfaces') {
+      for (const [code, description] of Object.entries(WIND_SURFACES))
+        entries.push({
+          code,
+          description,
+          ...(code === 'airportice' ? { aliases: ['airport_ice', 'airport ice'] } : {}),
+          minimumInMeters: 10,
+          maximumInMeters: 300,
+        });
       entries.push(
-        {
-          code: 'grass',
-          description: 'Supported grass wind-correction surface.',
-          minimumInMeters: 10,
-          maximumInMeters: 300,
-        },
-        {
-          code: 'airportice',
-          aliases: ['airport_ice', 'airport ice'],
-          description:
-            'Supported airport/ice wind-correction surface; aliases normalize to airportice.',
-          minimumInMeters: 10,
-          maximumInMeters: 300,
-        },
         {
           code: 'WSC',
           description:
@@ -178,7 +177,7 @@ export const listReferenceTool = tool('nasa_power_list_reference', {
         },
       );
       guidance.push(
-        'Supply both wind settings or neither. This is a documented supported surface subset, not every upstream surface.',
+        'Supply both wind settings or neither. Canonical NASA aliases retain underscores; airport_ice and airport ice normalize to airportice.',
       );
     } else {
       entries.push({
@@ -193,10 +192,13 @@ export const listReferenceTool = tool('nasa_power_list_reference', {
       });
       guidance.push(
         'Use nasa_power_dataframe_describe and nasa_power_dataframe_query with the exact returned canvas_id. Tokens expire and cannot cross processes.',
-        'Portable MCPB supports inline data; npm or Docker with CANVAS_PROVIDER_TYPE=duckdb supports larger staged tables. Narrow the request when no native provider is available.',
+        'Oversized comparison summaries have summaryDatasets handles; query in summaryIndex order and group location summaries by locationId. SQL NULL units restore an omitted source unit.',
+        'npm and Docker installs stage larger tables in DuckDB by default; the portable MCPB supports inline data only. Narrow the request when no native provider is available.',
       );
       if (getServerConfig().dataframeDropEnabled)
-        guidance.push('Use nasa_power_dataframe_drop to remove one explicitly named staged table.');
+        guidance.push(
+          'Use nasa_power_dataframe_drop to remove one explicitly named staged table. Removing the final table retires the canvas; later calls with that token return canvas_not_found.',
+        );
     }
     return {
       topic,

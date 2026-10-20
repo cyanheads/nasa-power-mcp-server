@@ -92,6 +92,50 @@ describe('geographic HTTP contracts', () => {
   const observations = () =>
     fetcher.mock.calls.filter(([url]) => /\/(point|regional)\?/.test(String(url)));
 
+  it('preserves normalized comparison and per-location request echoes after duplicate selection repair', async () => {
+    const result = await settle(
+      runRaw(compareLocationsTool, {
+        locations,
+        selection: { mode: 'parameters', parameters: ['t2m', 'T2M'] },
+        community: 'AG',
+        units: 'imperial',
+        timeStandard: 'UTC',
+        startYear: 2001,
+        endYear: 2020,
+        sort: { parameter: 'T2M', direction: 'desc' },
+      }),
+    );
+    expect(result.isError).not.toBe(true);
+    const request = {
+      temporalResolution: 'climatology',
+      selection,
+      community: 'AG',
+      units: 'imperial',
+      timeStandard: 'UTC',
+      startYear: 2001,
+      endYear: 2020,
+    };
+    expect(result.structuredContent).toMatchObject({
+      request: { ...request, locations, sort: { parameter: 'T2M', direction: 'desc' } },
+      locations: locations.map(({ latitude, longitude }) => ({
+        request: { ...request, latitude, longitude },
+      })),
+    });
+    for (const value of [
+      'startYear',
+      '2001',
+      'endYear',
+      '2020',
+      'imperial',
+      'UTC',
+      'request',
+      'selection',
+    ])
+      expect(text(result)).toContain(value);
+    for (const [url] of observations())
+      expect(new URL(String(url)).searchParams.get('parameters')).toBe('T2M');
+  });
+
   it('retains all native cells and per-period sparse statistics, including empty cells', async () => {
     reply = () =>
       Response.json({

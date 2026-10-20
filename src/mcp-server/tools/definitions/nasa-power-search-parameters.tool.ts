@@ -38,16 +38,15 @@ export const searchParametersTool = tool('nasa_power_search_parameters', {
       .number()
       .int()
       .min(1)
-      .max(100)
       .default(20)
-      .describe('Maximum entries returned, 1 through 100'),
+      .describe('Positive maximum entry count; values above 100 use an effective cap of 100'),
   }),
   output: z.object({
     community: CommunitySchema,
     temporalResolution: ResolutionSchema,
     filter: z.string().describe('Effective local token filter'),
     offset: z.number().describe('Requested filtered offset'),
-    limit: z.number().describe('Requested maximum entry count'),
+    limit: z.number().describe('Effective maximum entry count, capped at 100'),
     total: z.number().describe('Total matches across the complete dictionary'),
     hasMore: z.boolean().describe('Whether another filtered page follows'),
     truncated: z.boolean().describe('Whether matching entries remain after this page'),
@@ -56,7 +55,10 @@ export const searchParametersTool = tool('nasa_power_search_parameters', {
       .describe('Matching complete source entries'),
   }),
   enrichment: {
-    notice: z.string().optional().describe('Guidance when the complete filter has no matches'),
+    notice: z
+      .string()
+      .optional()
+      .describe('Effective output cap or guidance when the complete filter has no matches'),
   },
   errors: [
     {
@@ -93,6 +95,7 @@ export const searchParametersTool = tool('nasa_power_search_parameters', {
     },
   ],
   async handler(input, ctx) {
+    const limit = Math.min(input.limit, 100);
     const dictionary = await getPowerService().dictionary(
       input.community,
       input.temporalResolution,
@@ -109,17 +112,22 @@ export const searchParametersTool = tool('nasa_power_search_parameters', {
       })
       .sort(([left], [right]) => left.localeCompare(right));
     ctx.signal.throwIfAborted();
+    const notices: string[] = [];
+    if (input.limit > limit)
+      notices.push('The effective entry limit is 100; larger requested limits are capped.');
     if (matches.length === 0)
-      ctx.enrich.notice(
+      notices.push(
         'No parameters matched this filter for the selected community and temporal resolution. Broaden filter or use nasa_power_list_reference topic presets.',
       );
+    if (notices.length) ctx.enrich.notice(notices.join(' '));
     return {
       ...input,
+      limit,
       total: matches.length,
-      hasMore: input.offset + input.limit < matches.length,
-      truncated: input.offset + input.limit < matches.length,
+      hasMore: input.offset + limit < matches.length,
+      truncated: input.offset + limit < matches.length,
       entries: matches
-        .slice(input.offset, input.offset + input.limit)
+        .slice(input.offset, input.offset + limit)
         .map(([code, entry]) => SearchEntrySchema.parse({ ...entry, code })),
     };
   },

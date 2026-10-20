@@ -2,8 +2,11 @@
 import { z } from '@cyanheads/mcp-ts-core';
 import type { ColumnSchema } from '@cyanheads/mcp-ts-core/canvas';
 import {
+  type BucketSummary,
   type DatasetHandle,
+  DatasetHandleSchema,
   JsonValueSchema,
+  type NumericSummary,
   type ObservationRow,
   type ParameterMetadata,
 } from '../power/types.js';
@@ -18,7 +21,20 @@ export type PresentedDataset<T extends PresentableDataset> = Omit<T, 'rows'> & {
   rows: ObservationRow[];
   rowCount: number;
   dataset: DatasetHandle | null;
+  summaryDatasets?: { buckets: DatasetHandle; locations: DatasetHandle };
 };
+/** Complete comparison summaries before presentation; other scientific fields remain untouched. */
+export type ComparisonDataset = PresentableDataset & {
+  summaries: (Omit<BucketSummary, 'units'> & { units?: string | undefined })[];
+  locations: { locationId: string; summaries: NumericSummary[] }[];
+};
+/** Full summary tables; summaryIndex preserves original array order across SQL pages. */
+export const SummaryDatasetsSchema = z.object({
+  buckets: DatasetHandleSchema.describe('Complete bucket summaries ordered by summaryIndex'),
+  locations: DatasetHandleSchema.describe(
+    'Complete per-location summaries with locationId, ordered by summaryIndex',
+  ),
+});
 /** Native column schema plus scientific interpretation. */
 export type ScientificColumn = ColumnSchema &
   Partial<Pick<ParameterMetadata, 'units' | 'valueKind'>>;

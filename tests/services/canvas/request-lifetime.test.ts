@@ -22,7 +22,15 @@ describe('producer request lifetime', () => {
     const handle = (
       await fixture.service.present(dataset(), undefined, ctx, 'nasa_power_get_timeseries')
     ).dataset!;
-    expect((await fixture.storage.list('power/canvas/', createMockContext())).keys).toHaveLength(1);
+    const retained = (
+      await fixture.service.present(
+        dataset(),
+        handle.canvas_id,
+        fixture.ctx,
+        'nasa_power_get_timeseries',
+      )
+    ).dataset!;
+    expect((await fixture.storage.list('power/canvas/', createMockContext())).keys).toHaveLength(2);
     producer.abort(new Error('Connection closed'));
     for (const dropped of [true, false]) {
       const result = await runToolContract(dataframeDropTool, {
@@ -42,10 +50,21 @@ describe('producer request lifetime', () => {
       for (const value of [handle.canvas_id, handle.table, String(dropped)])
         expect(text).toContain(value);
     }
-    expect(await fixture.provider.describe(handle.canvas_id, fixture.ctx)).toEqual([]);
+    expect(
+      (await fixture.provider.describe(handle.canvas_id, fixture.ctx)).map((table) => table.name),
+    ).toEqual([retained.table]);
     expect(
       (await fixture.service.describe(handle.canvas_id, {}, createMockContext())).tables,
-    ).toEqual([]);
+    ).toHaveLength(1);
+    await fixture.service.drop(handle.canvas_id, { table: retained.table }, fixture.ctx);
+    const retired = await runToolContract(dataframeDropTool, {
+      canvas_id: handle.canvas_id,
+      table: retained.table,
+    });
+    expect(retired.isError).toBe(true);
+    expect(retired.structuredContent).toMatchObject({
+      error: { data: { reason: 'canvas_not_found' } },
+    });
     expect((await fixture.storage.list('power/canvas/', createMockContext())).keys).toEqual([]);
   });
 
