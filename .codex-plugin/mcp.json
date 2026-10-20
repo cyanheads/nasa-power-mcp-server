@@ -1,0 +1,9 @@
+{
+  "nasa-power-mcp-server": {
+    "command": "npx",
+    "args": ["-y", "@cyanheads/nasa-power-mcp-server"],
+    "env": {
+      "MCP_TRANSPORT_TYPE": "stdio"
+    }
+  }
+}

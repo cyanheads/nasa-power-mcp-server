@@ -1,0 +1,25 @@
+{
+  "name": "nasa-power-mcp-server",
+  "version": "0.1.0",
+  "description": "Query NASA POWER solar, wind, building, and agroclimatology data via MCP. STDIO or Streamable HTTP.",
+  "author": {
+    "name": "cyanheads",
+    "email": "casey@caseyjhand.com",
+    "url": "https://github.com/cyanheads"
+  },
+  "homepage": "https://github.com/cyanheads/nasa-power-mcp-server#readme",
+  "repository": "https://github.com/cyanheads/nasa-power-mcp-server",
+  "license": "Apache-2.0",
+  "keywords": ["mcp", "mcp-server", "model-context-protocol"],
+  "mcpServers": "./.codex-plugin/mcp.json",
+  "interface": {
+    "displayName": "nasa-power-mcp-server",
+    "shortDescription": "Query NASA POWER solar, wind, building, and agroclimatology data via MCP. STDIO or Streamable HTTP.",
+    "longDescription": "Query NASA POWER solar, wind, building, and agroclimatology data via MCP. STDIO or Streamable HTTP.",
+    "developerName": "cyanheads",
+    "category": "science",
+    "capabilities": ["Read"],
+    "websiteURL": "https://github.com/cyanheads/nasa-power-mcp-server#readme",
+    "defaultPrompt": []
+  }
+}
