@@ -28,7 +28,7 @@ User goals are to retrieve site histories, inspect climatology and tilted collec
 
 ## Shared input contracts
 
-Use JSON-Schema-serializable Zod schemas with descriptions on every field. Root schemas and nested location/selection objects are strict. Value normalization is limited to trimming codes and uppercasing parameter/community codes, lowercasing enum names, and documented one-to-one wind aliases. Do not fuzzy-match codes or infer coordinates. Framework key aliases and scalar repairs need no duplicate implementation.
+Use JSON-Schema-serializable Zod schemas with descriptions on every field. Root schemas and nested location/selection objects are strict. Trim and uppercase parameter codes, and accept documented one-to-one wind aliases. Community, resolution, time-standard, units, and preset values use their advertised canonical enum spellings: retaining explicit discriminated schemas keeps valid window combinations visible to clients without expanding thousands of case variants. Do not fuzzy-match codes or infer coordinates. Framework key aliases and scalar repairs need no duplicate implementation.
 
 | Input | Type and semantics |
 |:--|:--|
@@ -153,7 +153,7 @@ Stage the full bounded dataset, never silently a capped prefix. Return `dataset:
 | Docker | Include that dependency in target-architecture production installation; retain the existing glibc/musl pruning. Enable provider explicitly in documented container configuration. Verify real native initialization for both supported image architectures. |
 | Portable MCPB | `scripts/clean-mcpb.ts` strips `@duckdb/node-bindings-*`; this artifact cannot provide DataCanvas. Keep provider `none` in bundle configuration and disclose inline-only operation. Do not offer a bundle switch implying natives exist. Use npm or Docker for larger analytical datasets. |
 
-When a result is oversized and canvas is disabled or unavailable, return `canvas_required`, never truncate it into an apparently complete answer. Portable MCPB users can narrow dates/parameters/region or use the npm/Docker distribution with canvas enabled. Query/describe remain discoverable with actionable configuration errors; drop still follows its explicit flag. Supported native targets: Linux/macOS x64/arm64 and Windows x64; Windows arm64 and Workers are unsupported.
+When a result is oversized and canvas is disabled or unavailable, return `canvas_required`, never truncate it into an apparently complete answer. Portable MCPB users can narrow dates/parameters/region or use the npm/Docker distribution with canvas enabled. Query/describe remain discoverable with actionable configuration errors; drop still follows its explicit flag. DuckDB publishes prebuilt bindings for Linux, macOS, and Windows on x64 and arm64; verify the local npm installation and both Linux Docker architectures before release. Workers are unsupported.
 
 No standalone native helper executable is bundled. DuckDB is an upstream native library dependency: the server npm tarball contains the compiled JavaScript adapter and a direct runtime dependency declaration, and npm installs prebuilt platform-selected native dependency files beside it. No compiler, global DuckDB install, checkout-relative executable, or custom postinstall is permitted. Clean-install native functionality must pass for npm/Docker. The portable MCPB has reduced capabilities by design and must never advertise native analytics or full distribution parity.
 
@@ -272,13 +272,13 @@ Preserve window discrimination when composing schemas/types, including the distr
 |:--|:--|
 | POWER pacing | One process-wide active request; starts at least 2,000 ms apart; queue ≤32, enqueue wait ≤15 s |
 | Call deadline | 55 s overall, including queue, fetch, parse and registration; fetch attempt ≤20 s |
-| Retry | At most 2 attempts per single-site call within deadline; comparison ≤12 total attempts for ≤10 sites; all attempts pass the pacer |
+| Retry | At most 2 attempts per HTTP request; a cold single-site call can use 6 total across dictionary, configuration, and data within one deadline. Comparison ≤12 total attempts including references for ≤10 sites; all attempts pass the pacer |
 | Upstream decoded body | 16 MiB per response, streamed byte cap regardless of Content-Length; comparison ≤32 MiB total |
 | Dataset | ≤250,000 rows, ≤64 numeric/orientation parameter columns, ≤32 MiB normalized serialized rows; check before registration |
-| Inline | 40,000 JSON characters for observation rows; keep a nonempty whole-row preview within that budget |
+| Inline | Complete structured JSON and rendered text must each fit 40,000 characters; staged responses keep a nonempty whole-row preview of at most 20 rows. Reject oversized metadata or summaries with narrowing guidance before registration |
 | Canvas | 256 MiB engine memory per canvas, ≤8 tables per canvas, ≤4 canvases per tenant and ≤8 per process; table TTL 30 min, canvas sliding TTL 1 h, absolute cap 6 h |
 | Staging admission | Retained normalized row bytes ≤64 MiB per tenant / 128 MiB process; in-flight decoded-body + normalized-row reservations ≤64 MiB per tenant / 128 MiB process; at most 2 producer calls active process-wide |
-| SQL | 10 s deadline, ≤16,384 SQL characters, ≤1,000 rows and ≤40,000 returned JSON characters; one active query per canvas, ≤4 process-wide |
+| SQL | 10 s deadline, ≤16,384 SQL characters, ≤1,000 rows and ≤40,000 characters each for complete structured JSON and rendered text; one active query per canvas, ≤4 process-wide |
 | Cache | Dictionaries/configuration TTL 24 h; data TTL 10 min; memory LRU ≤64 MiB and ≤128 entries, no unbounded process map |
 
 ### Config
@@ -321,7 +321,7 @@ Declare entries inline on every affected tool; service throws carry the same `da
 | `sql_execution_error` | ValidationError | Conversion/range failure on staged data | “Use TRY_CAST or filter the offending values before converting them, then retry the SELECT.” |
 | `non_select_statement`, `multi_statement`, `denied_function`, `system_catalog_access`, `sql_read_only`, `plan_operator_not_allowed` | ValidationError | Preserve framework gate reason verbatim | “Send one read-only SELECT against tables shown by nasa_power_dataframe_describe; remove external data and system catalog access.” |
 | `query_limit` | ValidationError | SQL length/returned-value budget | “Reduce SQL length or narrow the SELECT projection and row limit, then retry nasa_power_dataframe_query.” |
-| `all_locations_failed` | ServiceUnavailable | Every comparison site failed | “Inspect each location failure and its recovery, then retry the corrected locations with the same parameter selection.” |
+| `all_locations_failed` | ServiceUnavailable | Every comparison site failed | “Inspect each location failure and retry corrected locations with nasa_power_compare_locations.” |
 
 Add `retryable: true` only for queue/capacity/upstream transient reasons. Preserve framework cancellation, engine DatabaseError, Timeout and ServiceUnavailable classifications; do not turn every native failure into invalid SQL. HTTP 401/403/404 retain Unauthorized/Forbidden/NotFound and bounded diagnostics, never imply a user key is required. Drop overrides canvas-not-found recovery as specified above. PSC without siteElevation and WSC without both wind settings are invalid corrections; PSC's recovery specifically says “Supply siteElevation for PSC, or remove PSC from parameters.”
 
