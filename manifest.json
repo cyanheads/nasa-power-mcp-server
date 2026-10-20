@@ -16,6 +16,13 @@
       "env": {
         "MCP_TRANSPORT_TYPE": "stdio",
         "MCP_AUTH_MODE": "none",
+        "CANVAS_PROVIDER_TYPE": "none",
+        "CANVAS_DEFAULT_MEMORY_LIMIT_MB": "256",
+        "CANVAS_MAX_CANVASES_PER_TENANT": "4",
+        "CANVAS_TTL_MS": "3600000",
+        "CANVAS_ABSOLUTE_CAP_MS": "21600000",
+        "NASA_POWER_DATAFRAME_DROP_ENABLED": "${user_config.NASA_POWER_DATAFRAME_DROP_ENABLED}",
+        "MCP_LOG_LEVEL": "${user_config.MCP_LOG_LEVEL}",
         "NODE_ENV": "production"
       }
     }
@@ -25,5 +32,18 @@
   },
   "tools_generated": true,
   "prompts_generated": true,
-  "user_config": {}
+  "user_config": {
+    "NASA_POWER_DATAFRAME_DROP_ENABLED": {
+      "type": "string",
+      "title": "Enable dataframe removal",
+      "description": "Expose explicit staged-table removal (true or false). The portable bundle remains inline-only.",
+      "default": "false"
+    },
+    "MCP_LOG_LEVEL": {
+      "type": "string",
+      "title": "Log level",
+      "description": "Minimum log level for output.",
+      "default": "info"
+    }
+  }
 }

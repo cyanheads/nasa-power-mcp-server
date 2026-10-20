@@ -195,3 +195,10 @@ repomix-output*
 duckdata/
 .claude
 .agents
+.codex
+framework-skills/
+.mirror/
+data/
+*.duckdb
+*.duckdb.wal
+*.mcpb

@@ -2,20 +2,16 @@
   "name": "nasa-power-mcp-server",
   "version": "0.1.0",
   "description": "Query NASA POWER solar, wind, building, and agroclimatology data via MCP. STDIO or Streamable HTTP.",
-  "author": {
-    "name": "cyanheads",
-    "email": "casey@caseyjhand.com",
-    "url": "https://github.com/cyanheads"
-  },
+  "author": { "name": "cyanheads", "email": "casey@caseyjhand.com", "url": "https://github.com/cyanheads" },
   "homepage": "https://github.com/cyanheads/nasa-power-mcp-server#readme",
   "repository": "https://github.com/cyanheads/nasa-power-mcp-server",
   "license": "Apache-2.0",
-  "keywords": ["mcp", "mcp-server", "model-context-protocol"],
+  "keywords": ["mcp", "mcp-server", "model-context-protocol", "typescript", "bun", "stdio", "streamable-http", "nasa", "nasa-power", "solar", "wind", "meteorology", "agroclimatology", "climate"],
   "mcpServers": "./.codex-plugin/mcp.json",
   "interface": {
     "displayName": "nasa-power-mcp-server",
     "shortDescription": "Query NASA POWER solar, wind, building, and agroclimatology data via MCP. STDIO or Streamable HTTP.",
-    "longDescription": "Query NASA POWER solar, wind, building, and agroclimatology data via MCP. STDIO or Streamable HTTP.",
+    "longDescription": "Retrieve NASA POWER hourly, daily, monthly and climatological observations for points, bounded regions and labeled location comparisons. Discover community-specific parameter codes and presets, preserve source units and missing values, and inspect provenance and period-aware summaries. Small results return inline; enable DuckDB in the npm or Docker distribution to stage complete larger datasets for explicit-token, read-only SQL. No NASA account or API key is required.",
     "developerName": "cyanheads",
     "category": "science",
     "capabilities": ["Read"],

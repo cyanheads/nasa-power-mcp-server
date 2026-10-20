@@ -79,3 +79,9 @@ docs/idea.md
 .agents/
 .mcpregistry_github_token
 .mcpregistry_registry_token
+.codex/
+.mirror/
+duckdata/
+*.duckdb
+*.duckdb.wal
+*.mcpb

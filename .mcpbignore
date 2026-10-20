@@ -2,6 +2,14 @@
 .mcpregistry_*
 /.claude/
 /.agents/
+/.codex/
+/.git/
+/.mirror/
+/data/
+/duckdata/
+*.duckdb
+*.duckdb.wal
+*.mcpb
 /framework-skills/
 /docs/idea.md
 /coverage/

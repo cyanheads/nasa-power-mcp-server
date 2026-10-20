@@ -16,6 +16,44 @@
       "version": "0.1.0",
       "environmentVariables": [
         {
+          "name": "CANVAS_PROVIDER_TYPE",
+          "description": "none for inline data; duckdb enables staged datasets and SQL on supported platforms.",
+          "format": "string",
+          "default": "none",
+          "choices": ["none", "duckdb"]
+        },
+        {
+          "name": "CANVAS_DEFAULT_MEMORY_LIMIT_MB",
+          "description": "Fixed per-engine memory limit in MiB, not total RSS or temporary disk.",
+          "format": "string",
+          "value": "256"
+        },
+        {
+          "name": "CANVAS_MAX_CANVASES_PER_TENANT",
+          "description": "Fixed tenant canvas limit.",
+          "format": "string",
+          "value": "4"
+        },
+        {
+          "name": "CANVAS_TTL_MS",
+          "description": "Fixed sliding canvas lifetime in milliseconds.",
+          "format": "string",
+          "value": "3600000"
+        },
+        {
+          "name": "CANVAS_ABSOLUTE_CAP_MS",
+          "description": "Fixed absolute canvas lifetime in milliseconds.",
+          "format": "string",
+          "value": "21600000"
+        },
+        {
+          "name": "NASA_POWER_DATAFRAME_DROP_ENABLED",
+          "description": "Expose explicit staged-table removal.",
+          "format": "boolean",
+          "default": "false",
+          "isRequired": false
+        },
+        {
           "name": "MCP_LOG_LEVEL",
           "description": "Sets the minimum log level for output (e.g., 'debug', 'info', 'warn').",
           "format": "string",
@@ -34,6 +72,44 @@
       "runtimeHint": "npx",
       "version": "0.1.0",
       "environmentVariables": [
+        {
+          "name": "CANVAS_PROVIDER_TYPE",
+          "description": "none for inline data; duckdb enables staged datasets and SQL on supported platforms.",
+          "format": "string",
+          "default": "none",
+          "choices": ["none", "duckdb"]
+        },
+        {
+          "name": "CANVAS_DEFAULT_MEMORY_LIMIT_MB",
+          "description": "Fixed per-engine memory limit in MiB, not total RSS or temporary disk.",
+          "format": "string",
+          "value": "256"
+        },
+        {
+          "name": "CANVAS_MAX_CANVASES_PER_TENANT",
+          "description": "Fixed tenant canvas limit.",
+          "format": "string",
+          "value": "4"
+        },
+        {
+          "name": "CANVAS_TTL_MS",
+          "description": "Fixed sliding canvas lifetime in milliseconds.",
+          "format": "string",
+          "value": "3600000"
+        },
+        {
+          "name": "CANVAS_ABSOLUTE_CAP_MS",
+          "description": "Fixed absolute canvas lifetime in milliseconds.",
+          "format": "string",
+          "value": "21600000"
+        },
+        {
+          "name": "NASA_POWER_DATAFRAME_DROP_ENABLED",
+          "description": "Expose explicit staged-table removal.",
+          "format": "boolean",
+          "default": "false",
+          "isRequired": false
+        },
         {
           "name": "MCP_TRANSPORT_TYPE",
           "description": "Selects the HTTP transport.",

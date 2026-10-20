@@ -3,21 +3,44 @@
   "name": "nasa-power-mcp-server",
   "version": "0.1.0",
   "description": "Query NASA POWER solar, wind, building, and agroclimatology data via MCP. STDIO or Streamable HTTP.",
-  "author": {
-    "name": "cyanheads",
-    "email": "casey@caseyjhand.com",
-    "url": "https://github.com/cyanheads"
-  },
+  "author": { "name": "cyanheads", "email": "casey@caseyjhand.com", "url": "https://github.com/cyanheads" },
   "homepage": "https://github.com/cyanheads/nasa-power-mcp-server#readme",
   "repository": "https://github.com/cyanheads/nasa-power-mcp-server",
   "license": "Apache-2.0",
-  "keywords": ["mcp", "mcp-server", "model-context-protocol"],
+  "keywords": ["mcp", "mcp-server", "model-context-protocol", "typescript", "bun", "stdio", "streamable-http", "nasa", "nasa-power", "solar", "wind", "meteorology", "agroclimatology", "climate"],
+  "userConfig": {
+    "CANVAS_PROVIDER_TYPE": {
+      "type": "string",
+      "title": "Analytical workspace",
+      "description": "Use none for inline data or duckdb for larger staged datasets and SQL on supported platforms.",
+      "default": "none"
+    },
+    "NASA_POWER_DATAFRAME_DROP_ENABLED": {
+      "type": "string",
+      "title": "Enable dataframe removal",
+      "description": "Expose explicit staged-table removal (true or false). Requires the duckdb provider for table operations.",
+      "default": "false"
+    },
+    "MCP_LOG_LEVEL": {
+      "type": "string",
+      "title": "Log level",
+      "description": "Minimum log level for output.",
+      "default": "info"
+    }
+  },
   "mcpServers": {
     "nasa-power-mcp-server": {
       "command": "npx",
       "args": ["-y", "@cyanheads/nasa-power-mcp-server"],
       "env": {
-        "MCP_TRANSPORT_TYPE": "stdio"
+        "MCP_TRANSPORT_TYPE": "stdio",
+        "CANVAS_PROVIDER_TYPE": "${user_config.CANVAS_PROVIDER_TYPE}",
+        "CANVAS_DEFAULT_MEMORY_LIMIT_MB": "256",
+        "CANVAS_MAX_CANVASES_PER_TENANT": "4",
+        "CANVAS_TTL_MS": "3600000",
+        "CANVAS_ABSOLUTE_CAP_MS": "21600000",
+        "NASA_POWER_DATAFRAME_DROP_ENABLED": "${user_config.NASA_POWER_DATAFRAME_DROP_ENABLED}",
+        "MCP_LOG_LEVEL": "${user_config.MCP_LOG_LEVEL}"
       }
     }
   }
