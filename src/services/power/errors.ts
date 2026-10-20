@@ -1,6 +1,10 @@
 /** @fileoverview POWER classified failures and recoveries. @module services/power/errors */
 import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 
+/** Reference bodies are fetched whole, independent of observation inputs or local pagination. */
+export const REFERENCE_LIMIT_RECOVERY =
+  'Retry later; if the reference response still exceeds the size limit, report it to the server maintainer. Local filters, pagination, and observation inputs cannot reduce this upstream reference response.';
+
 /** Recoveries shared with the tool error contracts. */
 export const RECOVERIES = {
   unsupported_parameter:

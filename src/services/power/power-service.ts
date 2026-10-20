@@ -3,7 +3,7 @@ import type { Context, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 import { createPacer, withRetry } from '@cyanheads/mcp-ts-core/utils';
 import { getServerConfig, POWER_LIMITS, type ServerConfig } from '../../config/server-config.js';
-import { describePowerError, powerError, shapeError } from './errors.js';
+import { describePowerError, powerError, REFERENCE_LIMIT_RECOVERY, shapeError } from './errors.js';
 import {
   normalizePoint,
   normalizeRegion,
@@ -322,6 +322,16 @@ export class PowerService {
         },
       );
     } catch (error) {
+      if (
+        error instanceof McpError &&
+        error.data?.reason === 'dataset_limit' &&
+        (url.pathname === '/api/system/manager/parameters' ||
+          url.pathname.endsWith('/configuration'))
+      )
+        throw powerError('dataset_limit', error.message, {
+          ...error.data,
+          recovery: { hint: REFERENCE_LIMIT_RECOVERY },
+        });
       if (error instanceof McpError && error.data?.reason === 'pacer_shed')
         throw powerError('request_queue_full', 'NASA POWER request scheduling capacity is full.', {
           retryAfter: error.data.retryAfter,
@@ -456,10 +466,18 @@ export class PowerService {
         );
     }
     const codes = requestedParameters(request);
-    if (codes.length > (request.temporalResolution === 'hourly' ? 15 : 20))
+    const parameterLimit = request.temporalResolution === 'hourly' ? 15 : 20;
+    if (codes.length > parameterLimit)
       throw powerError(
         'unsupported_parameter',
-        'Parameter selection including corrections exceeds the request cap.',
+        `Effective parameter count ${codes.length} exceeds the ${parameterLimit}-code ${request.temporalResolution} limit.`,
+        {
+          count: codes.length,
+          limit: parameterLimit,
+          recovery: {
+            hint: `Reduce the selection to at most ${parameterLimit} effective codes, including any added PSC and WSC corrections, then retry.`,
+          },
+        },
       );
     const dictionary = await this.dictionary(
       request.community,
@@ -515,7 +533,6 @@ export class PowerService {
       format: 'JSON',
       units: request.units,
       'time-standard': request.timeStandard,
-      user: 'nasa-power-mcp-server',
     }))
       query.set(key, value);
     if (request.temporalResolution === 'hourly' || request.temporalResolution === 'daily') {

@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CanvasRegistry, DataCanvas, DuckdbProvider } from '@cyanheads/mcp-ts-core/canvas';
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { createInMemoryStorage, createMockContext } from '@cyanheads/mcp-ts-core/testing';
 import { POWER_LIMITS } from '@/config/server-config.js';
 import { initCanvasService } from '@/services/canvas/index.js';
 import type { ObservationRow, ParameterMetadata } from '@/services/power/types.js';
@@ -61,8 +61,10 @@ export async function nativeFixture(dropEnabled = true) {
   );
   const canvas = new DataCanvas(provider, registry);
   const ctx = createMockContext();
+  const storage = createInMemoryStorage();
   const service = initCanvasService({
     canvas,
+    storage,
     config: { dataframeDropEnabled: dropEnabled },
     now: () => clock,
     reconciliationMs: 60_000,
@@ -73,6 +75,7 @@ export async function nativeFixture(dropEnabled = true) {
     provider,
     registry,
     ctx,
+    storage,
     advance(ms: number) {
       clock += ms;
     },

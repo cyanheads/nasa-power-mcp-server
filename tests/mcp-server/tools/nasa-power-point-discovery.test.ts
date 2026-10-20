@@ -1,6 +1,6 @@
 /** @fileoverview Point and discovery contracts through the real network and presentation seams. @module tests/mcp-server/tools/nasa-power-point-discovery */
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
-import { runToolContract } from '@cyanheads/mcp-ts-core/testing';
+import { createInMemoryStorage, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getClimatologyTool } from '@/mcp-server/tools/definitions/nasa-power-get-climatology.tool.js';
 import { getTimeseriesTool } from '@/mcp-server/tools/definitions/nasa-power-get-timeseries.tool.js';
@@ -69,7 +69,10 @@ describe('point tool consumption contracts', () => {
     status = 200;
     fetcher.mockClear();
     source = initPowerService({ fetch: fetcher, config: { dataframeDropEnabled: false } });
-    canvas = initCanvasService({ config: { dataframeDropEnabled: false } });
+    canvas = initCanvasService({
+      storage: createInMemoryStorage(),
+      config: { dataframeDropEnabled: false },
+    });
   });
   afterEach(async () => {
     source.dispose();
@@ -293,7 +296,7 @@ describe('point tool consumption contracts', () => {
           parameters: Array.from({ length: 16 }, (_, i) => `P${i}`),
         },
       },
-      'unsupported_parameter',
+      'invalid_arguments',
     ],
   ])('returns actionable declared failure for %j', async (extra, reason) => {
     const result = await settle(runRaw(getTimeseriesTool, { ...input, ...extra }));
@@ -375,6 +378,154 @@ describe('point tool consumption contracts', () => {
     expect(text(result)).toContain(`Depth ${message}`);
     expect(text(result)).toContain('P007');
   });
+
+  /** Exact representative records captured from NASA monthly/climatology RE dictionaries. */
+  const nullableDictionary = (resolution: 'monthly' | 'climatology') => ({
+    AIRMASS_HR: {
+      type: null,
+      temporal: resolution.toUpperCase(),
+      source: null,
+      community: 'RE',
+      calculated: false,
+      inputs: null,
+      units: null,
+      name: 'Air Mass (Hour-Based Parameter Set)',
+      definition: null,
+    },
+    ...(resolution === 'climatology'
+      ? {
+          SI_TILTED_AVG: {
+            type: null,
+            temporal: 'CLIMATOLOGY',
+            source: 'POWER',
+            community: 'RE',
+            calculated: true,
+            inputs:
+              "['ALLSKY_SFC_SW_DWN_HR', 'ALLSKY_SFC_SW_DIFF_HR', 'ALLSKY_SFC_SW_DNI_HR', 'ALLSKY_SRF_ALB_HR', 'SG_SZA_HR', 'SG_SAA_HR']",
+            units: null,
+            name: null,
+            definition: null,
+          },
+        }
+      : {}),
+    T2M: {
+      type: 'METEOROLOGY',
+      temporal: resolution.toUpperCase(),
+      source: 'SOURCE',
+      community: 'RE',
+      calculated: false,
+      inputs: null,
+      units: 'C',
+      name: 'Temperature at 2 Meters',
+      definition:
+        'The average air (dry bulb) temperature at 2 meters above the surface of the earth.',
+    },
+  });
+
+  it.each(['monthly', 'climatology'] as const)(
+    'preserves nullable %s dictionary metadata while filtering and paging',
+    async (temporalResolution) => {
+      const captured = nullableDictionary(temporalResolution);
+      entries = captured;
+      const browse = await settle(
+        runToolContract(searchParametersTool, { temporalResolution, limit: 1 }),
+      );
+      expect(browse.isError).not.toBe(true);
+      expect(browse.structuredContent).toMatchObject({
+        total: Object.keys(captured).length,
+        hasMore: true,
+        entries: [{ code: 'AIRMASS_HR', ...captured.AIRMASS_HR }],
+      });
+      const orderedColumns =
+        'Records with ordered columns [` type `, ` temporal `, ` source `, ` community `, ` calculated `, ` inputs `, ` units `, ` name `, ` definition `, ` code `]';
+      expect(text(browse)).toContain(orderedColumns);
+      expect(text(browse)).toContain(
+        `[null, \` ${temporalResolution.toUpperCase()} \`, null, \` RE \`, false, null, null, \` Air Mass (Hour-Based Parameter Set) \`, null, \` AIRMASS_HR \`]`,
+      );
+      const filtered = await runToolContract(searchParametersTool, {
+        temporalResolution,
+        filter: 'temperature 2',
+        limit: 1,
+      });
+      expect(filtered.structuredContent).toMatchObject({
+        total: 1,
+        hasMore: false,
+        entries: [{ code: 'T2M', ...captured.T2M }],
+      });
+      expect(text(filtered)).toContain(captured.T2M.definition);
+      const last = await runToolContract(searchParametersTool, {
+        temporalResolution,
+        offset: Object.keys(captured).length - 1,
+        limit: 1,
+      });
+      expect(last.structuredContent).toMatchObject({
+        hasMore: false,
+        entries: [{ code: 'T2M' }],
+      });
+      if (temporalResolution === 'climatology') {
+        const tilted = await runToolContract(searchParametersTool, {
+          temporalResolution,
+          filter: 'SI_TILTED_AVG',
+        });
+        expect(tilted.structuredContent).toMatchObject({
+          total: 1,
+          entries: [{ code: 'SI_TILTED_AVG', ...captured.SI_TILTED_AVG }],
+        });
+        expect(text(tilted)).toContain(orderedColumns);
+        expect(text(tilted)).toContain(
+          "[null, ` CLIMATOLOGY `, ` POWER `, ` RE `, true, ` ['ALLSKY_SFC_SW_DWN_HR', 'ALLSKY_SFC_SW_DIFF_HR', 'ALLSKY_SFC_SW_DNI_HR', 'ALLSKY_SRF_ALB_HR', 'SG_SZA_HR', 'SG_SAA_HR'] `, null, null, null, ` SI_TILTED_AVG `]",
+        );
+      }
+    },
+  );
+
+  it.each(['monthly', 'climatology'] as const)(
+    'allows valid %s T2M data preflight with unrelated nullable dictionary entries',
+    async (temporalResolution) => {
+      entries = nullableDictionary(temporalResolution);
+      body = payload({ T2M: temporalResolution === 'monthly' ? { '202401': 3 } : { JAN: 3 } });
+      const result = await settle(
+        temporalResolution === 'monthly'
+          ? runToolContract(getTimeseriesTool, {
+              temporalResolution,
+              latitude: 47,
+              longitude: -122,
+              startYear: 2024,
+              endYear: 2024,
+              selection: input.selection,
+            })
+          : runToolContract(getClimatologyTool, {
+              latitude: 47,
+              longitude: -122,
+              selection: input.selection,
+            }),
+      );
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toMatchObject({ rowCount: 1, rows: [{ T2M: 3 }] });
+      expect(text(result)).toContain('T2M');
+      expect(text(result)).toContain('3');
+      expect(fetcher).toHaveBeenCalledTimes(3);
+    },
+  );
+
+  it.each(['type', 'source', 'units', 'name', 'definition'] as const)(
+    'rejects number and object dictionary %s values without weakening string validation',
+    async (field) => {
+      for (const invalid of [42, { invalid: true }]) {
+        source.dispose();
+        source = initPowerService({ fetch: fetcher, config: { dataframeDropEnabled: false } });
+        entries = { T2M: { [field]: invalid } };
+        const result = await settle(
+          runToolContract(searchParametersTool, { temporalResolution: 'monthly' }),
+        );
+        expect(result.isError).toBe(true);
+        expect(result.structuredContent).toMatchObject({
+          error: { code: JsonRpcErrorCode.SerializationError },
+        });
+        expect(text(result)).toContain(`T2M.${field}`);
+      }
+    },
+  );
 
   it('browses blank filters to maximum 100 and handles offset past the end', async () => {
     entries = Object.fromEntries(

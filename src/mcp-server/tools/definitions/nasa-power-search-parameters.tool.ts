@@ -6,6 +6,7 @@ import {
   CommunitySchema,
   DictionaryEntrySchema,
   getPowerService,
+  REFERENCE_LIMIT_RECOVERY,
   ResolutionSchema,
 } from '@/services/power/index.js';
 
@@ -79,8 +80,7 @@ export const searchParametersTool = tool('nasa_power_search_parameters', {
       reason: 'dataset_limit',
       code: JsonRpcErrorCode.ValidationError,
       when: 'Dictionary response exceeds the bounded source body limit',
-      recovery:
-        'Narrow the date window, region, selected parameters, or location count and retry the producing tool.',
+      recovery: REFERENCE_LIMIT_RECOVERY,
       thrownBy: 'service',
     },
     {

@@ -125,7 +125,7 @@ export function summarizeBuckets(dataset: PowerDataset, locationId: string): Buc
       const end = bucket === 'DJF' ? Date.UTC(year, 2, 1) : Date.UTC(year, months[2], 1);
       if (!bounds || (start < bounds[1] && end > bounds[0]))
         specs.push({
-          bucket: bucket as BucketSummary['bucket'],
+          bucket,
           year: climatology ? null : year,
           start,
           end,

@@ -27,12 +27,11 @@ const canvasDefaults = {
   CANVAS_ABSOLUTE_CAP_MS: String(POWER_LIMITS.canvasAbsoluteTtlMs),
 };
 parseConfig();
-const defaults: Record<string, string> = {};
 for (const [key, value] of Object.entries(canvasDefaults)) {
   const configured = process.env[key]?.trim();
-  if (!configured || /^\$\{[^}]+\}$/.test(configured)) defaults[key] = value;
+  if (!configured || /^\$\{[^}]+\}$/.test(configured)) process.env[key] = value;
 }
-resetConfig(defaults);
+resetConfig();
 let powerService: PowerService | undefined;
 let canvasService: CanvasService | undefined;
 
@@ -67,7 +66,11 @@ await createApp({
       );
     const config = getServerConfig();
     powerService = initPowerService({ config });
-    canvasService = initCanvasService({ config, ...(core.canvas ? { canvas: core.canvas } : {}) });
+    canvasService = initCanvasService({
+      config,
+      storage: core.storage,
+      ...(core.canvas ? { canvas: core.canvas } : {}),
+    });
   },
   async teardown() {
     powerService?.dispose();

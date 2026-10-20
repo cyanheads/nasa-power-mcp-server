@@ -26,13 +26,13 @@ describe('canvas failure cleanup and atomic admission', () => {
     expect((await stage()).dataset).not.toBeNull();
   });
   it('rolls back the whole table after provenance storage fails', async () => {
-    vi.spyOn(fixture.ctx.state, 'set').mockRejectedValueOnce(new Error('forced storage failure'));
+    vi.spyOn(fixture.storage, 'set').mockRejectedValueOnce(new Error('forced storage failure'));
     await expect(stage()).rejects.toThrow('forced storage failure');
     expect(fixture.canvas.countForTenant(fixture.ctx)).toBe(0);
     expect((await stage()).dataset).not.toBeNull();
   });
   it('retains failed cleanup reservations until native absence is confirmed', async () => {
-    vi.spyOn(fixture.ctx.state, 'set').mockRejectedValue(new Error('forced storage failure'));
+    vi.spyOn(fixture.storage, 'set').mockRejectedValue(new Error('forced storage failure'));
     const drop = vi
       .spyOn(fixture.provider, 'drop')
       .mockRejectedValue(new Error('forced drop failure'));
@@ -43,13 +43,13 @@ describe('canvas failure cleanup and atomic admission', () => {
     drop.mockRestore();
     await fixture.service.reconcile();
     expect(fixture.canvas.countForTenant(fixture.ctx)).toBe(0);
-    vi.mocked(fixture.ctx.state.set).mockRestore();
+    vi.mocked(fixture.storage.set).mockRestore();
     expect((await stage()).dataset).not.toBeNull();
   });
   it('cancels after registration and removes the new table and provenance', async () => {
     const controller = new AbortController();
-    const original = fixture.ctx.state.set.bind(fixture.ctx.state);
-    const set = vi.spyOn(fixture.ctx.state, 'set').mockImplementation(async (...args) => {
+    const original = fixture.storage.set.bind(fixture.storage);
+    const set = vi.spyOn(fixture.storage, 'set').mockImplementation(async (...args) => {
       await original(...args);
       controller.abort();
     });

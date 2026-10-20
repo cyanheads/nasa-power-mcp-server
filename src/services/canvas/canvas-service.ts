@@ -8,6 +8,7 @@ import type {
   TableInfo,
 } from '@cyanheads/mcp-ts-core/canvas';
 import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
+import type { StorageService } from '@cyanheads/mcp-ts-core/storage';
 import { POWER_LIMITS, type ServerConfig } from '@/config/server-config.js';
 import { type ObservationRow, powerError } from '../power/index.js';
 import { canvasError, safeCanvasError } from './errors.js';
@@ -46,6 +47,7 @@ type Producer = {
 /** Service dependencies; native lifecycle settings are supplied to the framework at startup. */
 export type CanvasServiceOptions = {
   canvas?: DataCanvas;
+  storage: StorageService;
   now?: () => number;
   config: ServerConfig;
   reconciliationMs?: number;
@@ -54,6 +56,7 @@ export type CanvasServiceOptions = {
 /** Explicit token access, atomic admission, and native-lifecycle reconciliation. */
 export class CanvasService {
   private readonly canvas: DataCanvas | undefined;
+  private readonly storage: StorageService;
   private readonly now: () => number;
   private readonly config: ServerConfig;
   private readonly records = new Map<string, CanvasRecord>();
@@ -67,6 +70,7 @@ export class CanvasService {
 
   constructor(options: CanvasServiceOptions) {
     this.canvas = options.canvas;
+    this.storage = options.storage;
     this.now = options.now ?? Date.now;
     this.config = options.config;
     this.timer = setInterval(() => {
@@ -113,14 +117,12 @@ export class CanvasService {
       this.shutdownController.signal,
       AbortSignal.timeout(POWER_LIMITS.deadlineMs),
     ]);
-    let finish!: () => void;
+    const { promise: settled, resolve: finish } = Promise.withResolvers<void>();
     const producer: Producer = {
       tenant: this.tenant(ctx),
       bytes,
       controller,
-      settled: new Promise<void>((resolve) => {
-        finish = resolve;
-      }),
+      settled,
     };
     this.producers.add(producer);
     try {
@@ -216,7 +218,9 @@ export class CanvasService {
       for (const info of tables) {
         const staged = record.tables.get(info.name);
         if (!staged || staged.cleanup) continue;
-        const provenance = await ctx.state.get<Provenance>(this.key(record, info.name));
+        ctx.signal.throwIfAborted();
+        const provenance = await this.storage.get<Provenance>(this.key(record, info.name), ctx);
+        ctx.signal.throwIfAborted();
         if (!provenance)
           throw new McpError(
             JsonRpcErrorCode.InternalError,
@@ -511,7 +515,7 @@ export class CanvasService {
         signal: ctx.signal,
       });
       ctx.signal.throwIfAborted();
-      await ctx.state.set(this.key(record, table), staged.provenance, {
+      await this.storage.set(this.key(record, table), staged.provenance, ctx, {
         ttl: POWER_LIMITS.canvasAbsoluteTtlMs / 1_000,
       });
       ctx.signal.throwIfAborted();
@@ -590,7 +594,7 @@ export class CanvasService {
   }
 
   private async removeMetadata(record: CanvasRecord, table: string) {
-    await record.ctx.state.delete(this.key(record, table));
+    await this.storage.delete(this.key(record, table), record.ctx);
     record.tables.delete(table);
   }
   private async confirmAbsent(record: CanvasRecord) {

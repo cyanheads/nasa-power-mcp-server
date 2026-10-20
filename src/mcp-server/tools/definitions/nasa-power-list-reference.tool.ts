@@ -87,7 +87,7 @@ export const listReferenceTool = tool('nasa_power_list_reference', {
         {
           code: 'SB',
           description:
-            'Sustainable Buildings community; solar irradiation commonly uses W-hr/m^2/day.',
+            'Sustainable Buildings community; daily solar irradiance commonly uses W m-2.',
         },
         {
           code: 'AG',

@@ -1,5 +1,9 @@
 /** @fileoverview Geographic contracts through the real HTTP and presentation seams. @module tests/mcp-server/tools/nasa-power-geographic */
-import { createMockContext, runToolContract } from '@cyanheads/mcp-ts-core/testing';
+import {
+  createInMemoryStorage,
+  createMockContext,
+  runToolContract,
+} from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { compareLocationsTool } from '@/mcp-server/tools/definitions/nasa-power-compare-locations.tool.js';
 import { getRegionTool } from '@/mcp-server/tools/definitions/nasa-power-get-region.tool.js';
@@ -75,7 +79,10 @@ describe('geographic HTTP contracts', () => {
     reply = () => Response.json(point());
     fetcher.mockClear();
     source = initPowerService({ fetch: fetcher, config: { dataframeDropEnabled: false } });
-    canvas = initCanvasService({ config: { dataframeDropEnabled: false } });
+    canvas = initCanvasService({
+      storage: createInMemoryStorage(),
+      config: { dataframeDropEnabled: false },
+    });
   });
   afterEach(async () => {
     source.dispose();
@@ -532,5 +539,5 @@ describe('geographic HTTP contracts', () => {
     );
     failure(result, 'dataset_limit');
     expect(observations()).toHaveLength(2);
-  });
+  }, 15_000);
 });

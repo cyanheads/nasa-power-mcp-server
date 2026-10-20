@@ -52,6 +52,44 @@ describe('PowerService HTTP contract', () => {
     services = [];
     vi.useRealTimers();
   });
+  it.each(['point', 'region'] as const)(
+    'sends a NASA-valid optional user identifier for %s observations',
+    async (geometry) => {
+      const fetcher = vi.fn<typeof fetch>(async (input) => {
+        const url = new URL(String(input));
+        const user = url.searchParams.get('user');
+        if (user !== null && user.length >= 15)
+          return Response.json(
+            { messages: ['Please supply a correct user (shorter then 15 characters).'] },
+            { status: 422 },
+          );
+        if (url.pathname.endsWith('/regional'))
+          return Response.json({ type: 'FeatureCollection', features: [point] });
+        return respond(input);
+      });
+      const instance = service(fetcher);
+      const ctx = createMockContext();
+      const pending = (
+        geometry === 'point'
+          ? instance.point(daily(), ctx)
+          : instance.region(
+              RegionRequestSchema.parse({
+                temporalResolution: 'daily',
+                latitudeMin: 0,
+                latitudeMax: 2,
+                longitudeMin: 0,
+                longitudeMax: 2,
+                parameter: 'T2M',
+                startDate: '1982-01-01',
+                endDate: '1982-01-02',
+              }),
+              ctx,
+            )
+      ).catch((error) => error);
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(await pending).toMatchObject({ rows: [{ T2M: 0 }] });
+    },
+  );
   it('serializes exact upstream URLs/options and correction aliases, caching immutable copies', async () => {
     const fetcher = vi.fn<typeof fetch>(async (url) => respond(url));
     const instance = service(fetcher);
@@ -63,7 +101,7 @@ describe('PowerService HTTP contract', () => {
     expect(fetcher.mock.calls.map((call) => String(call[0]))).toEqual([
       'https://power.larc.nasa.gov/api/system/manager/parameters?community=RE&temporal=daily',
       'https://power.larc.nasa.gov/api/temporal/daily/configuration',
-      'https://power.larc.nasa.gov/api/temporal/daily/point?parameters=T2M%2CPSC%2CWSC&community=RE&format=JSON&units=metric&time-standard=LST&user=nasa-power-mcp-server&start=19820101&end=19820102&latitude=47&longitude=-122&site-elevation=0&wind-elevation=50&wind-surface=airportice',
+      'https://power.larc.nasa.gov/api/temporal/daily/point?parameters=T2M%2CPSC%2CWSC&community=RE&format=JSON&units=metric&time-standard=LST&start=19820101&end=19820102&latitude=47&longitude=-122&site-elevation=0&wind-elevation=50&wind-surface=airportice',
     ]);
     for (const call of fetcher.mock.calls)
       expect(call[1]).toMatchObject({

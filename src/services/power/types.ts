@@ -46,18 +46,35 @@ export const SelectionSchema = z
         mode: z.literal('preset').describe('Select a named group'),
         preset: z
           .enum(['solar_pv', 'wind_turbine', 'building_hvac', 'agroclimatology', 'water_balance'])
-          .describe('Parameter group'),
+          .describe('Parameter group from nasa_power_list_reference topic presets'),
       })
       .describe('Named preset selection'),
     z
       .strictObject({
         mode: z.literal('parameters').describe('Select exact codes'),
-        parameters: z.array(CodeSchema).min(1).max(20).describe('Unique parameter codes'),
+        parameters: z
+          .array(CodeSchema)
+          .min(1)
+          .max(20)
+          .describe(
+            'Unique codes from nasa_power_search_parameters for the selected community and temporalResolution; PSC/WSC corrections count toward the effective limit',
+          ),
       })
       .describe('Explicit parameter selection'),
   ])
   .describe('Parameter selection');
 export type Selection = z.infer<typeof SelectionSchema>;
+const hourlySelection = z
+  .discriminatedUnion('mode', [
+    SelectionSchema.options[0],
+    SelectionSchema.options[1]
+      .extend({
+        parameters: SelectionSchema.options[1].shape.parameters.max(15),
+      })
+      .describe('Explicit hourly parameter selection'),
+  ])
+  .default({ mode: 'preset', preset: 'solar_pv' })
+  .describe('Hourly parameter selection; at most 15 effective codes including PSC/WSC corrections');
 const latitude = z.number().min(-90).max(90).describe('Latitude in degrees north');
 const longitude = z.number().min(-180).max(180).describe('Longitude in degrees east');
 /** Validate real Gregorian dates without manufacturing timestamps. */
@@ -71,7 +88,7 @@ export function isDate(value: string): boolean {
 const date = z
   .string()
   .refine(isDate, 'Expected a real Gregorian YYYY-MM-DD date')
-  .describe('Inclusive Gregorian date');
+  .describe('Inclusive Gregorian date in YYYY-MM-DD format');
 const year = z.number().int().min(1981).max(9999).describe('Calendar year');
 const common = {
   community: CommunitySchema.default('RE'),
@@ -86,17 +103,26 @@ const point = {
   latitude,
   longitude,
   selection: SelectionSchema.default({ mode: 'preset', preset: 'solar_pv' }),
-  siteElevation: z.number().optional().describe('Site elevation in meters for PSC'),
+  siteElevation: z
+    .number()
+    .optional()
+    .describe(
+      'Site elevation in meters; supplying it adds PSC to the effective parameter selection',
+    ),
   windElevation: z
     .number()
     .min(10)
     .max(300)
     .optional()
-    .describe('Wind correction height in meters'),
+    .describe(
+      'Wind correction height in meters; requires windSurface and adds WSC to the effective parameter selection',
+    ),
   windSurface: z
     .enum(['grass', 'airportice', 'airport_ice', 'airport ice'])
     .optional()
-    .describe('Wind surface; airport_ice and airport ice alias airportice'),
+    .describe(
+      'Wind surface paired with windElevation; airport_ice and airport ice alias airportice',
+    ),
 };
 const windows = {
   hourly: {
@@ -122,7 +148,9 @@ const windows = {
 };
 /** Strict point request retaining resolution/window discrimination. */
 export const PowerRequestSchema = z.discriminatedUnion('temporalResolution', [
-  z.strictObject({ ...point, ...windows.hourly }).describe('Hourly point request'),
+  z
+    .strictObject({ ...point, ...windows.hourly, selection: hourlySelection })
+    .describe('Hourly point request'),
   z.strictObject({ ...point, ...windows.daily }).describe('Daily point request'),
   z.strictObject({ ...point, ...windows.monthly }).describe('Monthly point request'),
   z.strictObject({ ...point, ...windows.climatology }).describe('Climatology point request'),
@@ -134,7 +162,9 @@ const region = {
   latitudeMax: latitude,
   longitudeMin: longitude,
   longitudeMax: longitude,
-  parameter: CodeSchema,
+  parameter: CodeSchema.describe(
+    'One code from nasa_power_search_parameters for the selected community and temporalResolution; point corrections PSC/WSC are unsupported',
+  ),
 };
 /** Region requests intentionally exclude point-only correction fields. */
 export const RegionRequestSchema = z.discriminatedUnion('temporalResolution', [
@@ -161,7 +191,9 @@ const comparison = {
     .describe('Locations in stable input order'),
   sort: z
     .strictObject({
-      parameter: CodeSchema,
+      parameter: CodeSchema.describe(
+        'Selected numeric parameter code to sort; units must be known and identical across successful locations',
+      ),
       direction: z.enum(['asc', 'desc']).describe('Numeric sort direction'),
     })
     .optional()
@@ -169,7 +201,9 @@ const comparison = {
 };
 /** Comparison orchestration contract, separate from the point service. */
 export const CompareRequestSchema = z.discriminatedUnion('temporalResolution', [
-  z.strictObject({ ...comparison, ...windows.hourly }).describe('Hourly comparison request'),
+  z
+    .strictObject({ ...comparison, ...windows.hourly, selection: hourlySelection })
+    .describe('Hourly comparison request'),
   z
     .strictObject({
       ...comparison,
@@ -394,9 +428,13 @@ export type BucketSummary = {
 /** Complete source dictionary with sparse, explicitly modeled fields. */
 export const DictionaryEntrySchema = z
   .object({
-    type: z.string().optional().describe('Source parameter family'),
+    type: z.string().nullable().optional().describe('Source parameter family'),
     temporal: z.string().optional().describe('Source temporal resolution designation'),
-    source: z.string().optional().describe('Reported source dataset or calculation provider'),
+    source: z
+      .string()
+      .nullable()
+      .optional()
+      .describe('Reported source dataset or calculation provider'),
     community: z.string().optional().describe('Source community designation'),
     calculated: z
       .boolean()
@@ -405,9 +443,13 @@ export const DictionaryEntrySchema = z
     inputs: JsonValueSchema.optional().describe(
       'Original calculation inputs, including explicit null',
     ),
-    units: z.string().optional().describe('Exact parameter units for the selected pair'),
-    name: z.string().optional().describe('NASA parameter name'),
-    definition: z.string().optional().describe('NASA parameter definition preserved verbatim'),
+    units: z.string().nullable().optional().describe('Exact parameter units for the selected pair'),
+    name: z.string().nullable().optional().describe('NASA parameter name'),
+    definition: z
+      .string()
+      .nullable()
+      .optional()
+      .describe('NASA parameter definition preserved verbatim'),
   })
   .catchall(JsonValueSchema);
 export const ParameterDictionarySchema = z.record(CodeSchema, DictionaryEntrySchema);
