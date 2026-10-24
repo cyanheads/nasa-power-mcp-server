@@ -1,6 +1,6 @@
 # nasa-power-mcp-server - Directory Structure
 
-Generated on: 2026-10-20 07:39:15
+Generated on: 2026-10-24 21:51:24
 
 ```text
 nasa-power-mcp-server/
@@ -26,6 +26,7 @@ nasa-power-mcp-server/
 ├── changelog/
 │   ├── 0.1.x/
 │   ├── 0.2.x/
+│   ├── 0.3.x/
 │   └── template.md
 ├── docs/
 │   └── design.md
@@ -176,23 +177,31 @@ nasa-power-mcp-server/
 │   │   ├── server-config.test.ts
 │   │   └── startup.test.ts
 │   ├── fixtures/
-│   │   └── comparison-full.json
+│   │   ├── climate-zones.json
+│   │   ├── comparison-full.json
+│   │   ├── region-annual-summaries.json
+│   │   ├── region-annual.json
+│   │   ├── tilted-groups.json
+│   │   └── tilted-wide.json
 │   ├── fuzz/
 │   ├── integration/
 │   ├── mcp-server/
 │   │   └── tools/
+│   │       ├── nasa-power-climatology-native.test.ts
 │   │       ├── nasa-power-dataframe-gating.test.ts
 │   │       ├── nasa-power-dataframe.test.ts
 │   │       ├── nasa-power-geographic-native.test.ts
 │   │       ├── nasa-power-geographic.test.ts
 │   │       ├── nasa-power-point-discovery.test.ts
 │   │       ├── nasa-power-reference-config.test.ts
-│   │       └── nasa-power-reference-size-recovery.test.ts
+│   │       ├── nasa-power-reference-size-recovery.test.ts
+│   │       └── nasa-power-regional-summaries.test.ts
 │   ├── prompts/
 │   ├── resources/
 │   ├── services/
 │   │   ├── canvas/
 │   │   │   ├── canvas-service.test.ts
+│   │   │   ├── configured-limits.test.ts
 │   │   │   ├── failure-boundaries.test.ts
 │   │   │   ├── fixture.ts
 │   │   │   ├── format.test.ts
@@ -203,7 +212,8 @@ nasa-power-mcp-server/
 │   │       ├── power-service.test.ts
 │   │       └── science.test.ts
 │   ├── smoke/
-│   └── tools/
+│   ├── tools/
+│   └── markdown-text.ts
 ├── .dockerignore
 ├── .env.example
 ├── .gitattributes
