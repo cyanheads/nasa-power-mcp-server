@@ -128,7 +128,7 @@ export const listReferenceTool = tool('nasa_power_list_reference', {
       );
       guidance.push(
         'Recent records can be missing because release latency differs by product; current dates are allowed without guaranteeing valid observations.',
-        'Monthly annual keys and climatology ANN remain separate from monthly records. Custom climatology years must be paired and within current product configuration.',
+        'Monthly annual keys and climatology ANN remain separate from monthly records. Custom point climatology years must be paired and within current product configuration. Regional climatology accepts no year fields and reports its precomputed source period; use nasa_power_get_climatology for custom point years.',
       );
     } else if (topic === 'missing_data') {
       entries.push(
@@ -153,7 +153,7 @@ export const listReferenceTool = tool('nasa_power_list_reference', {
         },
       );
       guidance.push(
-        'No complete requested calendar is synthesized. All-null statistics remain null. Annual records never enter monthly means; orientation strings have no numeric summary.',
+        'No complete requested calendar is synthesized. All-null statistics remain null. Annual records never enter monthly means; orientation strings and categorical T_ZONES/TM_ZONES codes have no arithmetic summaries or numeric comparison sort metrics. Climate-zone codes remain numeric in observations and SQL.',
       );
     } else if (topic === 'wind_surfaces') {
       for (const [code, description] of Object.entries(WIND_SURFACES))
@@ -187,12 +187,13 @@ export const listReferenceTool = tool('nasa_power_list_reference', {
         available: config.canvas.providerType === 'duckdb',
         dropEnabled: getServerConfig().dataframeDropEnabled,
         tableTtlInMs: POWER_LIMITS.tableTtlMs,
-        canvasTtlInMs: POWER_LIMITS.canvasTtlMs,
-        absoluteLifetimeInMs: POWER_LIMITS.canvasAbsoluteTtlMs,
+        canvasTtlInMs: config.canvas.ttlMs,
+        absoluteLifetimeInMs: config.canvas.absoluteCapMs,
       });
       guidance.push(
         'Use nasa_power_dataframe_describe and nasa_power_dataframe_query with the exact returned canvas_id. Tokens expire and cannot cross processes.',
         'Oversized comparison summaries have summaryDatasets handles; query in summaryIndex order and group location summaries by locationId. SQL NULL units restore an omitted source unit.',
+        'Oversized regional summaries have a summaryDataset handle and exact summaryCount; query in summaryIndex order to restore every cross-cell summary.',
         'npm and Docker installs stage larger tables in DuckDB by default; the portable MCPB supports inline data only. Narrow the request when no native provider is available.',
       );
       if (getServerConfig().dataframeDropEnabled)

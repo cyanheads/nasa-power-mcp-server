@@ -7,6 +7,7 @@ import type {
   DataCanvas,
   TableInfo,
 } from '@cyanheads/mcp-ts-core/canvas';
+import type { AppConfig } from '@cyanheads/mcp-ts-core/config';
 import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 import type { StorageService } from '@cyanheads/mcp-ts-core/storage';
 import { POWER_LIMITS, type ServerConfig } from '@/config/server-config.js';
@@ -20,11 +21,12 @@ import {
   type Provenance,
   ProvenanceSchema,
   QueryResultSchema,
+  type RegionalSummaryDataset,
   type ScientificColumn,
 } from './types.js';
 
 type SummaryTable = {
-  key: 'buckets' | 'locations';
+  key: 'buckets' | 'locations' | 'regional';
   table: string;
   rows: Record<string, string | number | boolean | null | undefined>[];
   columns: ScientificColumn[];
@@ -57,6 +59,7 @@ export type CanvasServiceOptions = {
   storage: StorageService;
   now?: () => number;
   config: ServerConfig;
+  canvasLimits?: Pick<AppConfig['canvas'], 'maxCanvasesPerTenant' | 'absoluteCapMs'>;
   reconciliationMs?: number;
 };
 
@@ -66,6 +69,7 @@ export class CanvasService {
   private readonly storage: StorageService;
   private readonly now: () => number;
   private readonly config: ServerConfig;
+  private readonly canvasLimits: NonNullable<CanvasServiceOptions['canvasLimits']>;
   private readonly records = new Map<string, CanvasRecord>();
   private readonly producers = new Set<Producer>();
   private readonly operations = new Set<Promise<unknown>>();
@@ -80,6 +84,10 @@ export class CanvasService {
     this.storage = options.storage;
     this.now = options.now ?? Date.now;
     this.config = options.config;
+    this.canvasLimits = options.canvasLimits ?? {
+      maxCanvasesPerTenant: POWER_LIMITS.canvasesPerTenant,
+      absoluteCapMs: POWER_LIMITS.canvasAbsoluteTtlMs,
+    };
     this.timer = setInterval(() => {
       void this.reconcile().catch(() => {
         /* Individual records retain reservations and log failures. */
@@ -157,39 +165,9 @@ export class CanvasService {
         )
         .map((summary, summaryIndex) => ({ ...summary, summaryIndex })),
     };
-    const strings = new Set([
-      'parameter',
-      'locationId',
-      'units',
-      'bucket',
-      'method',
-      'periodKind',
-      'firstReturnedKey',
-      'lastReturnedKey',
-      'lastValidPeriodKey',
-      'lastValidDate',
-    ]);
-    const booleans = new Set(['complete', 'windowClipped']);
-    const tables: SummaryTable[] = (['buckets', 'locations'] as const).map((key) => {
-      const rows = summaryRows[key];
-      const names = new Set(rows.flatMap((row) => Object.keys(row)));
-      return {
-        key,
-        table: `power_${randomUUID().replaceAll('-', '')}`,
-        rows,
-        columns: [...names].map((name) => ({
-          name,
-          type: strings.has(name)
-            ? 'VARCHAR'
-            : booleans.has(name)
-              ? 'BOOLEAN'
-              : name === 'summaryIndex'
-                ? 'INTEGER'
-                : 'DOUBLE',
-          nullable: true,
-        })),
-      };
-    });
+    const tables = (['buckets', 'locations'] as const).map((key) =>
+      this.summaryTable(key, summaryRows[key]),
+    );
     const compact = {
       ...dataset,
       summaries: dataset.summaries.slice(0, 1),
@@ -200,6 +178,66 @@ export class CanvasService {
       })),
     };
     return this.present(compact, canvasId, ctx, sourceTool, tables);
+  }
+
+  /** Stage complete cross-cell summaries when the no-observation regional envelope overflows. */
+  presentRegion<T extends RegionalSummaryDataset>(
+    dataset: T,
+    canvasId: string | undefined,
+    ctx: Context,
+    sourceTool: string,
+  ) {
+    if (this.fits({ ...dataset, rows: [], rowCount: dataset.rows.length, dataset: null }))
+      return this.present(dataset, canvasId, ctx, sourceTool);
+    const summaries = this.summaryTable(
+      'regional',
+      dataset.summaries.map((summary, summaryIndex) => ({ ...summary, summaryIndex })),
+    );
+    return this.present(
+      {
+        ...dataset,
+        summaries: dataset.summaries.slice(0, 1),
+        summaryCount: dataset.summaries.length,
+      },
+      canvasId,
+      ctx,
+      sourceTool,
+      [summaries],
+    );
+  }
+
+  private summaryTable(key: SummaryTable['key'], rows: SummaryTable['rows']): SummaryTable {
+    const strings = new Set([
+      'parameter',
+      'locationId',
+      'units',
+      'bucket',
+      'method',
+      'periodKind',
+      'periodKey',
+      'firstReturnedKey',
+      'lastReturnedKey',
+      'lastValidPeriodKey',
+      'lastValidDate',
+    ]);
+    const booleans = new Set(['complete', 'windowClipped']);
+    const names = new Set(rows.flatMap((row) => Object.keys(row)));
+    return {
+      key,
+      table: `power_${randomUUID().replaceAll('-', '')}`,
+      rows,
+      columns: [...names].map((name) => ({
+        name,
+        type: strings.has(name)
+          ? 'VARCHAR'
+          : booleans.has(name)
+            ? 'BOOLEAN'
+            : name === 'summaryIndex'
+              ? 'INTEGER'
+              : 'DOUBLE',
+        nullable: true,
+      })),
+    };
   }
 
   /** Preserve the scientific envelope with complete staging and bounded whole-row previews. */
@@ -253,6 +291,17 @@ export class CanvasService {
       queryTool: 'nasa_power_dataframe_query' as const,
     });
     const relatedHandles = (id: string, expiresAt: string) => {
+      const regional = related.find((item) => item.key === 'regional');
+      if (regional)
+        return {
+          summaryDataset: handle(
+            id,
+            expiresAt,
+            regional.table,
+            regional.rows.length,
+            regional.columns,
+          ),
+        };
       const buckets = related.find((item) => item.key === 'buckets');
       const locations = related.find((item) => item.key === 'locations');
       return buckets && locations
@@ -301,6 +350,16 @@ export class CanvasService {
       ctx,
       (instance, info) => {
         const references = relatedHandles(instance.canvasId, expiry(instance, info));
+        if (related.length)
+          Object.assign(references, {
+            dataset: handle(
+              instance.canvasId,
+              expiry(instance, info),
+              table,
+              dataset.rows.length,
+              columns,
+            ),
+          });
         for (const name of [table, ...related.map((item) => item.table)]) {
           const staged = this.registration(record, name);
           Object.assign(staged.provenance.envelope, references);
@@ -595,8 +654,8 @@ export class CanvasService {
     );
     if (
       !record &&
-      (records.length >= POWER_LIMITS.canvasesPerProcess ||
-        tenantRecords.length >= POWER_LIMITS.canvasesPerTenant)
+      (records.length >= this.config.maxCanvasesPerProcess ||
+        tenantRecords.length >= this.canvasLimits.maxCanvasesPerTenant)
     )
       throw canvasError(
         'canvas_capacity_exhausted',
@@ -701,7 +760,7 @@ export class CanvasService {
       for (const registration of registrations) {
         const entry = this.registration(record, registration.table);
         await this.storage.set(this.key(record, registration.table), entry.provenance, ctx, {
-          ttl: POWER_LIMITS.canvasAbsoluteTtlMs / 1_000,
+          ttl: this.canvasLimits.absoluteCapMs / 1_000,
         });
         ctx.signal.throwIfAborted();
       }
@@ -828,7 +887,7 @@ export class CanvasService {
         }
         if (
           (record.tables.size === 0 && actual.length === 0) ||
-          this.now() - record.created >= POWER_LIMITS.canvasAbsoluteTtlMs
+          this.now() - record.created >= this.canvasLimits.absoluteCapMs
         ) {
           await this.canvas.drop(record.id, record.ctx);
           await provider.destroyCanvas(record.id, record.ctx);

@@ -2,7 +2,7 @@
 
 **Server:** nasa-power-mcp-server
 **Version:** 0.2.0
-**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.13.15`
+**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.13.16`
 **Engines:** Bun ≥1.4.0, Node ≥24.0.0
 **MCP SDK:** `@modelcontextprotocol/server` ^2.3.1
 **Zod:** ^4.6.7
@@ -56,11 +56,13 @@ Tool files live in `src/mcp-server/tools/definitions/`. Nine tools are registere
 
 ### Configuration and distribution
 
-`src/config/server-config.ts` lazily parses the drop flag with `z.stringbool().default(false)` and exports fixed `POWER_LIMITS`. Never use `z.coerce.boolean()` for environment flags.
+`src/config/server-config.ts` lazily parses the drop flag with `z.stringbool().default(false)`, the positive `NASA_POWER_MAX_CANVASES_PER_PROCESS` (default eight), and exports fixed `POWER_LIMITS`. Never use `z.coerce.boolean()` for environment flags.
 
-`src/index.ts` fixes DuckDB to 256 MiB engine memory, four canvases per tenant, a one-hour sliding TTL and a six-hour absolute cap. The service further enforces eight tables per canvas, eight canvases per process and a 30-minute table TTL. Engine memory is not total RSS or temporary-disk capacity.
+`src/index.ts` defaults DuckDB to 256 MiB engine memory, four canvases per tenant, a one-hour sliding TTL and a six-hour absolute cap while honoring validated operator overrides. Pass resolved core canvas limits to service admission and provenance retention. The service enforces the configured process cap, eight tables per canvas and a 30-minute table TTL. Engine memory is not total RSS or temporary-disk capacity.
 
 `src/index.ts` also defaults `CANVAS_PROVIDER_TYPE` to `duckdb` once `parseConfig()` has loaded `.env`, so npm and Docker installs, which install the native dependency normally on supported platforms, stage by default; `none` disables staging. The portable MCPB fixes `CANVAS_PROVIDER_TYPE=none` because its bundle strips DuckDB's native bindings. Keep those option sets distinct.
+
+`@duckdb/node-api` stays on 1.5.6: framework 0.13.16's optional peer accepts 1.x, so 2.x makes npm installs fail with `ERESOLVE`.
 
 ### Identity and lifecycle
 
@@ -305,7 +307,7 @@ import { getMyService } from '@/services/my-domain/my-service.js';
 - [ ] Handlers throw on failure — error factories or plain `Error`, no try/catch
 - [ ] New codes and presets are checked against the selected community/resolution dictionary; source units, fill-as-`null`, `omittedParameters` and annual-period distinctions survive normalization
 - [ ] Producing tools present through `CanvasService.present()`: oversized data stages completely or fails with `canvas_required` / `dataset_limit`, never a truncated source prefix
-- [ ] Workload bounds live in `POWER_LIMITS`; the four fixed canvas settings match across `src/index.ts`, `.env.example`, `server.json`, `manifest.json` and both plugin manifests
+- [ ] Workload bounds live in `POWER_LIMITS`; configurable canvas defaults and process cap match across `src/index.ts`, `.env.example`, `server.json`, `manifest.json` and both plugin manifests
 - [ ] `format()` renders all data the LLM needs — different clients forward different surfaces (Claude Code → `structuredContent`, Claude Desktop → `content[]`); both must carry the same data
 - [ ] If wrapping external API: raw/domain/output schemas reviewed against real upstream sparsity/nullability before finalizing required vs optional fields
 - [ ] If wrapping external API: normalization and `format()` preserve uncertainty; do not fabricate facts from missing upstream data

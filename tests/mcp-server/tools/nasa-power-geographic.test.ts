@@ -9,6 +9,7 @@ import { compareLocationsTool } from '@/mcp-server/tools/definitions/nasa-power-
 import { getRegionTool } from '@/mcp-server/tools/definitions/nasa-power-get-region.tool.js';
 import { initCanvasService } from '@/services/canvas/index.js';
 import { initPowerService } from '@/services/power/index.js';
+import { markdownText } from '../../markdown-text.js';
 
 const selection = { mode: 'parameters' as const, parameters: ['T2M'] };
 const label = 'site\n**literal** | ``` https://example.com/site';
@@ -26,7 +27,7 @@ const region = {
   startDate: '2024-01-01',
   endDate: '2024-01-02',
 };
-function feature(series: Record<string, Record<string, number>>, latitude = 40) {
+function feature(series: Record<string, Record<string, number | string>>, latitude = 40) {
   return {
     type: 'Feature',
     geometry: { type: 'Point', coordinates: [-120, latitude, 10] },
@@ -68,7 +69,8 @@ describe('geographic HTTP contracts', () => {
   let reply: (url: URL) => Response;
   const fetcher = vi.fn<typeof fetch>(async (url) => {
     const parsed = new URL(String(url));
-    if (parsed.pathname.endsWith('/parameters')) return Response.json({ T2M: {}, RH2M: {} });
+    if (parsed.pathname.endsWith('/parameters'))
+      return Response.json({ T2M: {}, RH2M: {}, T_ZONES: {}, TM_ZONES: {} });
     if (parsed.pathname.endsWith('/configuration'))
       return Response.json({ settings: { start: '1981-01-01', end: '2025-12-31' } });
     return reply(parsed);
@@ -78,10 +80,13 @@ describe('geographic HTTP contracts', () => {
     vi.setSystemTime(new Date('2026-10-19T00:00:00Z'));
     reply = () => Response.json(point());
     fetcher.mockClear();
-    source = initPowerService({ fetch: fetcher, config: { dataframeDropEnabled: false } });
+    source = initPowerService({
+      fetch: fetcher,
+      config: { maxCanvasesPerProcess: 8, dataframeDropEnabled: false },
+    });
     canvas = initCanvasService({
       storage: createInMemoryStorage(),
-      config: { dataframeDropEnabled: false },
+      config: { maxCanvasesPerProcess: 8, dataframeDropEnabled: false },
     });
   });
   afterEach(async () => {
@@ -91,6 +96,150 @@ describe('geographic HTTP contracts', () => {
   });
   const observations = () =>
     fetcher.mock.calls.filter(([url]) => /\/(point|regional)\?/.test(String(url)));
+
+  it.each(['T_ZONES', 'TM_ZONES'])(
+    'excludes %s from comparison arithmetic and rejects explicit numeric sorting',
+    async (code) => {
+      reply = () =>
+        Response.json({
+          ...feature({ [code]: { JAN: 22, FEB: 61, ANN: 34 } }),
+          parameters: { [code]: { units: 'zones' } },
+        });
+      const args = {
+        locations,
+        selection: { mode: 'parameters', parameters: [code] },
+        community: 'SB',
+      };
+      const result = await settle(runRaw(compareLocationsTool, args));
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toMatchObject({
+        parameters: [{ code, units: 'zones', valueKind: 'categorical' }],
+        summaries: [],
+        locations: [
+          { summaries: [], sortMetric: null },
+          { summaries: [], sortMetric: null },
+          { summaries: [], sortMetric: null },
+        ],
+      });
+      expect(text(result)).toContain('categorical');
+      expect(markdownText(text(result)).match(/\bzones\b/g)).toHaveLength(4);
+      failure(
+        await settle(
+          runRaw(compareLocationsTool, { ...args, sort: { parameter: code, direction: 'asc' } }),
+        ),
+        'unsupported_parameter',
+      );
+    },
+  );
+
+  it.each(['mismatch', 'missing'])(
+    'keeps categorical units per location when shared units are %s',
+    async (mode) => {
+      reply = (url) =>
+        Response.json({
+          ...feature({ TM_ZONES: { ANN: 34 } }),
+          parameters: {
+            TM_ZONES:
+              url.searchParams.get('latitude') === '40'
+                ? { units: 'zones' }
+                : mode === 'mismatch'
+                  ? { units: 'classes' }
+                  : {},
+          },
+        });
+      const result = await settle(
+        runRaw(compareLocationsTool, {
+          locations,
+          selection: { mode: 'parameters', parameters: ['TM_ZONES'] },
+          community: 'SB',
+        }),
+      );
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).not.toHaveProperty('parameters.0.units');
+      expect(result.structuredContent).toHaveProperty('locations.0.parameters.0.units', 'zones');
+      expect(markdownText(text(result)).match(/\bzones\b/g)).toHaveLength(1);
+      if (mode === 'mismatch') {
+        expect(result.structuredContent).toHaveProperty(
+          'locations.1.parameters.0.units',
+          'classes',
+        );
+        expect(markdownText(text(result)).match(/\bclasses\b/g)).toHaveLength(2);
+      } else {
+        expect(result.structuredContent).not.toHaveProperty('locations.1.parameters.0.units');
+      }
+    },
+  );
+
+  it('preserves shared orientation units independently of numeric comparability', async () => {
+    reply = () =>
+      Response.json({
+        ...feature({
+          SI_TILTED_AVG_OPTIMAL_ANG: { ANN: 20 },
+          SI_TILTED_AVG_OPTIMAL_ANG_ORT: { ANN: 'S' },
+        }),
+        parameters: {
+          SI_TILTED_AVG_OPTIMAL_ANG: { units: 'degrees' },
+          SI_TILTED_AVG_OPTIMAL_ANG_ORT: { units: 'N/S Orientation' },
+        },
+      });
+    const result = await settle(
+      runRaw(compareLocationsTool, {
+        locations,
+        selection: { mode: 'parameters', parameters: ['SI_EF_TILTED_SURFACE'] },
+      }),
+    );
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      comparable: true,
+      parameters: [
+        { code: 'SI_TILTED_AVG_OPTIMAL_ANG', units: 'degrees', valueKind: 'number' },
+        {
+          code: 'SI_TILTED_AVG_OPTIMAL_ANG_ORT',
+          units: 'N/S Orientation',
+          valueKind: 'orientation',
+        },
+      ],
+    });
+    expect(markdownText(text(result)).match(/N\/S Orientation/g)).toHaveLength(4);
+  });
+
+  it('preserves the precomputed regional climatology period without a requested year window', async () => {
+    reply = () =>
+      Response.json({
+        type: 'FeatureCollection',
+        features: [feature({ T2M: { JAN: 2, ANN: 3 } })],
+        header: { start: '20010101', end: '20251231' },
+        messages: ['Precomputed climatology'],
+      });
+    const { startDate: _start, endDate: _end, ...bounds } = region;
+    const result = await settle(
+      runRaw(getRegionTool, { ...bounds, temporalResolution: 'climatology' }),
+    );
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      metadata: {
+        reportedStart: '20010101',
+        reportedEnd: '20251231',
+        messages: ['Precomputed climatology'],
+      },
+    });
+    expect(text(result)).toContain('20010101');
+    expect(text(result)).toContain('20251231');
+  });
+
+  it.each([{ startYear: 1991 }, { endYear: 2020 }, { startYear: 1991, endYear: 2020 }])(
+    'rejects unsupported regional climatology years before any upstream request: %j',
+    async (years) => {
+      reply = () => Response.json({ type: 'FeatureCollection', features: [] });
+      const { startDate: _start, endDate: _end, ...bounds } = region;
+      const result = await settle(
+        runRaw(getRegionTool, { ...bounds, temporalResolution: 'climatology', ...years }),
+      );
+      expect(result.isError).toBe(true);
+      expect(text(result)).toContain('nasa_power_get_climatology');
+      expect(fetcher).not.toHaveBeenCalled();
+    },
+  );
 
   it('preserves normalized comparison and per-location request echoes after duplicate selection repair', async () => {
     const result = await settle(
@@ -395,7 +544,7 @@ describe('geographic HTTP contracts', () => {
         },
       },
     });
-    expect(text(result)).toContain('bad\nsource 422');
+    expect(markdownText(text(result))).toContain('bad\nsource 422');
     expect(text(result)).toContain('location_3');
   });
   it('stops unsent sites after a 429 while preserving earlier successes', async () => {
@@ -437,7 +586,7 @@ describe('geographic HTTP contracts', () => {
     source = initPowerService({
       fetch: fetcher,
       now: () => Date.now() + elapsed,
-      config: { dataframeDropEnabled: false },
+      config: { maxCanvasesPerProcess: 8, dataframeDropEnabled: false },
     });
     reply = () => {
       elapsed += 30_000;

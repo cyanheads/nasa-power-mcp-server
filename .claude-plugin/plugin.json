@@ -15,6 +15,36 @@
       "description": "duckdb (default) stages larger datasets for SQL on supported platforms; none keeps results inline.",
       "default": "duckdb"
     },
+    "CANVAS_DEFAULT_MEMORY_LIMIT_MB": {
+      "type": "string",
+      "title": "Engine memory per canvas",
+      "description": "Per-canvas engine memory in MiB, integer >=64; not total RSS or temporary disk.",
+      "default": "256"
+    },
+    "CANVAS_MAX_CANVASES_PER_TENANT": {
+      "type": "string",
+      "title": "Tenant canvas cap",
+      "description": "Positive active canvas limit per tenant; auth-none callers share one tenant.",
+      "default": "4"
+    },
+    "CANVAS_TTL_MS": {
+      "type": "string",
+      "title": "Sliding canvas lifetime",
+      "description": "Positive sliding canvas lifetime in milliseconds.",
+      "default": "3600000"
+    },
+    "CANVAS_ABSOLUTE_CAP_MS": {
+      "type": "string",
+      "title": "Absolute canvas lifetime",
+      "description": "Absolute canvas lifetime in milliseconds, at least the sliding TTL.",
+      "default": "21600000"
+    },
+    "NASA_POWER_MAX_CANVASES_PER_PROCESS": {
+      "type": "string",
+      "title": "Process canvas cap",
+      "description": "Positive active or pending canvas limit for this process.",
+      "default": "8"
+    },
     "NASA_POWER_DATAFRAME_DROP_ENABLED": {
       "type": "string",
       "title": "Enable dataframe removal",
@@ -35,11 +65,12 @@
       "env": {
         "MCP_TRANSPORT_TYPE": "stdio",
         "CANVAS_PROVIDER_TYPE": "${user_config.CANVAS_PROVIDER_TYPE}",
-        "CANVAS_DEFAULT_MEMORY_LIMIT_MB": "256",
-        "CANVAS_MAX_CANVASES_PER_TENANT": "4",
-        "CANVAS_TTL_MS": "3600000",
-        "CANVAS_ABSOLUTE_CAP_MS": "21600000",
+        "CANVAS_DEFAULT_MEMORY_LIMIT_MB": "${user_config.CANVAS_DEFAULT_MEMORY_LIMIT_MB}",
+        "CANVAS_MAX_CANVASES_PER_TENANT": "${user_config.CANVAS_MAX_CANVASES_PER_TENANT}",
+        "CANVAS_TTL_MS": "${user_config.CANVAS_TTL_MS}",
+        "CANVAS_ABSOLUTE_CAP_MS": "${user_config.CANVAS_ABSOLUTE_CAP_MS}",
         "NASA_POWER_DATAFRAME_DROP_ENABLED": "${user_config.NASA_POWER_DATAFRAME_DROP_ENABLED}",
+        "NASA_POWER_MAX_CANVASES_PER_PROCESS": "${user_config.NASA_POWER_MAX_CANVASES_PER_PROCESS}",
         "MCP_LOG_LEVEL": "${user_config.MCP_LOG_LEVEL}"
       }
     }

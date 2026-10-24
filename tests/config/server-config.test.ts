@@ -36,16 +36,18 @@ describe('server configuration before application startup', () => {
   it('reads the working-directory .env on the first configuration access', () => {
     expect(readConfig('NASA_POWER_DATAFRAME_DROP_ENABLED=true\n')).toEqual({
       dataframeDropEnabled: true,
+      maxCanvasesPerProcess: 8,
     });
   });
 
   it('preserves explicitly exported false over a true .env value', () => {
     expect(readConfig('NASA_POWER_DATAFRAME_DROP_ENABLED=true\n', 'false')).toEqual({
       dataframeDropEnabled: false,
+      maxCanvasesPerProcess: 8,
     });
   });
 
   it('defaults dataframe removal to false when the environment and .env are absent', () => {
-    expect(readConfig()).toEqual({ dataframeDropEnabled: false });
+    expect(readConfig()).toEqual({ dataframeDropEnabled: false, maxCanvasesPerProcess: 8 });
   });
 });

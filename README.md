@@ -7,7 +7,7 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-0.2.0-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/nasa-power-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.3.1-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/nasa-power-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/nasa-power-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.4.3-blueviolet.svg?style=flat-square)](https://bun.sh/)
+[![Version](https://img.shields.io/badge/Version-0.2.0-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/nasa-power-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.3.1-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/nasa-power-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/nasa-power-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.4.4-blueviolet.svg?style=flat-square)](https://bun.sh/)
 
 </div>
 
@@ -16,6 +16,12 @@
 [![Install in Claude Desktop](https://img.shields.io/badge/Install_in-Claude_Desktop-D97757?style=for-the-badge&logo=anthropic&logoColor=white)](https://github.com/cyanheads/nasa-power-mcp-server/releases/latest/download/nasa-power-mcp-server.mcpb) [![Install in Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=nasa-power-mcp-server&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBjeWFuaGVhZHMvbmFzYS1wb3dlci1tY3Atc2VydmVyIl19) [![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_Server-0098FF?style=for-the-badge&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect?url=vscode:mcp/install?%7B%22name%22%3A%22nasa-power-mcp-server%22%2C%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22%40cyanheads%2Fnasa-power-mcp-server%22%5D%7D)
 
 [![Framework](https://img.shields.io/badge/Built%20on-@cyanheads/mcp--ts--core-67E8F9?style=flat-square)](https://www.npmjs.com/package/@cyanheads/mcp-ts-core)
+
+</div>
+
+<div align="center">
+
+**Public Hosted Server:** [https://nasa-power.caseyjhand.com/mcp](https://nasa-power.caseyjhand.com/mcp)
 
 </div>
 
@@ -54,14 +60,16 @@ Eight tools are enabled by default; `NASA_POWER_DATAFRAME_DROP_ENABLED=true` ena
 ### `nasa_power_get_climatology` <sub>tool</sub>
 
 - Point coordinates with the same selection and corrections; optional `startYear` and `endYear` together, otherwise the source product range. No `temporalResolution` input.
-- Always inline, with no `canvas_id`; a profile over the 40,000-character budget fails `dataset_limit`. The `SI_EF_TILTED_SURFACE` alias lists its returned members, numeric angles and N/S orientation text included, in `expansions`.
+- Small profiles remain inline; larger profiles return a bounded preview and complete `dataset` handle. Pass optional `canvas_id` to reuse an existing workspace. Without DuckDB, narrow oversized selections for inline output. `SI_EF_TILTED_SURFACE` and the distinct `SI_TILTED_AVG`, `SI_TILTED_MIN`, `SI_TILTED_MAX` groups list only their actually returned members, numeric angles and N/S orientation text included, in `expansions`. A group is omitted only when none of its members return.
 
 ---
 
 ### `nasa_power_get_region` <sub>tool</sub>
 
 - One `parameter` over ordered `latitudeMin` / `latitudeMax` and `longitudeMin` / `longitudeMax`, each axis spanning 2–10 degrees (`invalid_region` otherwise); split antimeridian regions into separate calls. `temporalResolution` is `daily`, `monthly` or `climatology`; point corrections are unsupported.
+- Daily regions require date bounds and monthly regions require year bounds. Regional climatology accepts no year fields and reports the source's precomputed period; use `nasa_power_get_climatology` for a custom point year window.
 - Returns cell-tagged `rows`, `cellCount` and per-period `summaries` with equal-weight cell `min` / `mean` / `max`, not area-weighted. Optional `canvas_id` reuses a canvas for staging.
+- Oversized summary envelopes return `summaryDataset` with all cross-cell summaries, exact `summaryCount` and a whole-record inline preview. Query the table in `summaryIndex` order; SQL `units: null` restores an omitted source unit. Observations and summaries register together and retain linked provenance.
 
 ---
 
@@ -117,6 +125,7 @@ POWER-specific:
 - Historical gridded observations, rather than site measurements or forecasts. Meteorological coverage starts in 1981, solar in 1984 and hourly in 2001; source configuration and publication latency further constrain availability.
 - One active upstream request, starts at least two seconds apart, bounded retries and a 55-second overall call deadline. NASA publishes no numeric request allowance. References cache for 24 hours and observations for 10 minutes.
 - Source fill values become `null`; zero remains a measurement. Monthly annual keys and climatology `ANN` remain distinct from monthly observations. LST labels have no UTC offset.
+- `T_ZONES` and `TM_ZONES` retain numeric climate-zone codes with `valueKind: categorical`, including in SQL column metadata. They have no arithmetic summaries or comparison sort metrics; explicit numeric sorting by either is rejected.
 
 Agent-friendly output:
 
@@ -124,9 +133,26 @@ Agent-friendly output:
 - Explicit gaps — `omittedParameters` distinguishes an absent series from fill values; arithmetic observation means and calendar-season buckets are not climate normals, annual yields or water balances.
 - Complete datasets — inline outputs each fit 40,000 characters. Larger datasets stage all rows with a preview of at most 20 rows and a `dataset` handle; unsupported or oversized requests fail with narrowing guidance instead of returning a capped source prefix.
 
-Staging requires DuckDB and supports at most 250,000 rows, 64 parameter columns and 32 MiB of serialized rows per dataset. Canvases are process-local capabilities: pass the returned token explicitly and route later calls to the same process. Tables expire after 30 minutes, canvases after one idle hour with a six-hour absolute cap; limits are eight tables per canvas, four canvases per tenant and eight per process. Engine memory is 256 MiB per canvas, not a total RSS or temporary-disk quota.
+Staging requires DuckDB and supports at most 250,000 rows, 64 parameter columns and 32 MiB of serialized rows per dataset. Canvases are process-local capabilities: pass the returned token explicitly and route later calls to the same process. Tables expire after 30 minutes with eight tables per canvas. Defaults are one idle hour and six absolute hours per canvas, four canvases per tenant, eight per process, and 256 MiB engine memory per canvas. Operators can size canvas capacity, memory and lifetime below; engine memory does not bound total RSS or temporary disk.
 
 ## Getting started
+
+### Public Hosted Instance
+
+A public instance is available at `https://nasa-power.caseyjhand.com/mcp` — no installation required. Point any MCP client at it via Streamable HTTP:
+
+```json
+{
+  "mcpServers": {
+    "nasa-power-mcp-server": {
+      "type": "streamable-http",
+      "url": "https://nasa-power.caseyjhand.com/mcp"
+    }
+  }
+}
+```
+
+### Self-Hosted / Local
 
 Add the following to your MCP client configuration file.
 
@@ -218,17 +244,18 @@ cp .env.example .env
 |:---|:---|:---|
 | `NASA_POWER_DATAFRAME_DROP_ENABLED` | Expose explicit staged-table removal. | `false` |
 | `CANVAS_PROVIDER_TYPE` | `duckdb` stages large results for SQL on npm/Docker; `none` keeps results inline. MCPB fixes `none`. | `duckdb` |
-| `CANVAS_DEFAULT_MEMORY_LIMIT_MB` | Fixed engine memory limit; not total RSS or temporary disk. | `256` |
-| `CANVAS_MAX_CANVASES_PER_TENANT` | Fixed tenant canvas cap. | `4` |
-| `CANVAS_TTL_MS` | Fixed sliding canvas lifetime. | `3600000` |
-| `CANVAS_ABSOLUTE_CAP_MS` | Fixed absolute canvas lifetime. | `21600000` |
+| `CANVAS_DEFAULT_MEMORY_LIMIT_MB` | Per-canvas engine memory, integer ≥64 MiB; not total RSS or temporary disk. | `256` |
+| `CANVAS_MAX_CANVASES_PER_TENANT` | Positive tenant canvas cap; auth-none callers share one tenant. | `4` |
+| `NASA_POWER_MAX_CANVASES_PER_PROCESS` | Positive process canvas cap, including pending and failed cleanup reservations. | `8` |
+| `CANVAS_TTL_MS` | Positive sliding canvas lifetime in milliseconds. | `3600000` |
+| `CANVAS_ABSOLUTE_CAP_MS` | Absolute canvas lifetime in milliseconds, at least the sliding TTL. | `21600000` |
 | `MCP_TRANSPORT_TYPE` | `stdio` or `http`. | `stdio` |
 | `MCP_HTTP_HOST` / `MCP_HTTP_PORT` | HTTP bind address and port. | `127.0.0.1` / `3010` |
 | `MCP_AUTH_MODE` | `none`, `jwt` or `oauth`. | `none` |
 | `MCP_LOG_LEVEL` | Minimum log level. | `info` |
 | `OTEL_ENABLED` | Enable [OpenTelemetry](https://github.com/cyanheads/mcp-ts-core/tree/main/docs/telemetry). | `false` |
 
-DuckDB startup rejects changes to the four fixed canvas settings. See [`.env.example`](./.env.example) for optional transport, authentication, storage, logging and telemetry settings.
+Unset, blank and whole-value placeholder settings retain these defaults. Invalid sizing fails startup. Byte budgets, table limits and producer concurrency remain fixed independently of operator canvas sizing. See [`.env.example`](./.env.example) for optional transport, authentication, storage, logging and telemetry settings.
 
 ## Running the server
 

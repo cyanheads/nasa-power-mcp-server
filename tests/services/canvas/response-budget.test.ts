@@ -160,7 +160,7 @@ describe('complete analytical response budget', () => {
     ).toEqual([existing.table]);
   });
 
-  it('rejects oversized multi-cell period summaries before acquiring or registering native state', async () => {
+  it('stages oversized multi-cell summaries alongside observations in one batch', async () => {
     const base = dataset(365);
     const summaries = base.rows.map((row) => ({
       parameter: 'T2M',
@@ -169,9 +169,9 @@ describe('complete analytical response budget', () => {
       units: 'C',
       validCellCount: row.T2M === null ? 0 : 3,
       missingCellCount: row.T2M === null ? 3 : 0,
-      min: row.T2M,
-      mean: row.T2M,
-      max: row.T2M,
+      min: typeof row.T2M === 'number' ? row.T2M : null,
+      mean: typeof row.T2M === 'number' ? row.T2M : null,
+      max: typeof row.T2M === 'number' ? row.T2M : null,
     }));
     const regional = {
       ...base,
@@ -194,25 +194,20 @@ describe('complete analytical response budget', () => {
     expect(JSON.stringify(summaries).length).toBeGreaterThan(POWER_LIMITS.inlineCharacters);
     const acquire = vi.spyOn(fixture.canvas, 'acquire');
     const register = vi.spyOn(fixture.provider, 'registerTable');
-    const outcome = await fixture.service
-      .present(regional, undefined, fixture.ctx, 'nasa_power_get_region')
-      .then(
-        () => ({ accepted: true }),
-        (error: unknown) => ({ accepted: false, error }),
-      );
-    expect.soft(outcome).toMatchObject({
-      accepted: false,
-      error: {
-        data: {
-          reason: 'dataset_limit',
-          recovery: {
-            hint: 'Narrow the date window, region, selected parameters, or location count and retry the producing tool.',
-          },
-        },
-      },
-    });
-    expect.soft(acquire.mock.calls.length).toBe(0);
-    expect.soft(register.mock.calls.length).toBe(0);
+    const output = await fixture.service.presentRegion(
+      regional,
+      undefined,
+      fixture.ctx,
+      'nasa_power_get_region',
+    );
+    expect(output.rowCount).toBe(1095);
+    expect(output.summaryCount).toBe(365);
+    expect(output.summaryDataset?.rowCount).toBe(365);
+    expect(output.dataset?.canvas_id).toBe(output.summaryDataset?.canvas_id);
+    expect(acquire).toHaveBeenCalledOnce();
+    expect(register).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(output).length).toBeLessThanOrEqual(40000);
+    expect(renderedLength(output)).toBeLessThanOrEqual(40000);
   });
 
   it('stages the full point table while fitting metadata, pointer and whole-row preview on both surfaces', async () => {

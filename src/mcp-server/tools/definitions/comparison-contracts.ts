@@ -315,7 +315,15 @@ export function presentComparison(
         },
         parameters: [...parameters.values()].map((parameter) => {
           const { units: _units, ...rest } = parameter;
-          return comparableMetric(parameter.code) ? parameter : rest;
+          const sharedUnits =
+            parameter.units !== undefined &&
+            locations.every((location) =>
+              location.parameters.some(
+                (candidate) =>
+                  candidate.code === parameter.code && candidate.units === parameter.units,
+              ),
+            );
+          return sharedUnits ? parameter : rest;
         }),
         locations,
         failed,

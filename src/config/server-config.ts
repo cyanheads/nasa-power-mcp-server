@@ -1,6 +1,6 @@
 /** @fileoverview Fixed POWER workload bounds and environment settings. @module config/server-config */
 import { z } from '@cyanheads/mcp-ts-core';
-import { parseEnvConfig } from '@cyanheads/mcp-ts-core/config';
+import { parseConfig, parseEnvConfig } from '@cyanheads/mcp-ts-core/config';
 
 /** Immutable refusal boundaries, shared by producer and canvas services. */
 export const POWER_LIMITS = {
@@ -39,6 +39,13 @@ export const POWER_LIMITS = {
 } as const;
 /** Server-specific environment configuration. */
 export const ServerConfigSchema = z.object({
+  maxCanvasesPerProcess: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(Number.MAX_SAFE_INTEGER)
+    .default(POWER_LIMITS.canvasesPerProcess)
+    .describe('Maximum active or pending analytical canvases in this process'),
   dataframeDropEnabled: z
     .stringbool()
     .default(false)
@@ -49,7 +56,9 @@ export type ServerConfig = z.infer<typeof ServerConfigSchema>;
 let config: ServerConfig | undefined;
 /** Lazy environment parsing keeps imports safe before runtime setup. */
 export function getServerConfig(): ServerConfig {
+  if (!config) parseConfig();
   config ??= parseEnvConfig(ServerConfigSchema, {
+    maxCanvasesPerProcess: 'NASA_POWER_MAX_CANVASES_PER_PROCESS',
     dataframeDropEnabled: 'NASA_POWER_DATAFRAME_DROP_ENABLED',
   });
   return config;

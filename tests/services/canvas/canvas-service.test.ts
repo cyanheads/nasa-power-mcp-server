@@ -290,7 +290,7 @@ describe('CanvasService with DuckDB', () => {
   it('refuses disabled native staging and over-bound rows without partial success', async () => {
     const service = createCanvasService({
       storage: fixture.storage,
-      config: { dataframeDropEnabled: false },
+      config: { maxCanvasesPerProcess: 8, dataframeDropEnabled: false },
     });
     try {
       await expect(

@@ -30,7 +30,7 @@ const service = (fetcher: typeof fetch) => {
   const instance = createPowerService({
     fetch: fetcher,
     now: Date.now,
-    config: { dataframeDropEnabled: false },
+    config: { maxCanvasesPerProcess: 8, dataframeDropEnabled: false },
   });
   services.push(instance);
   return instance;
@@ -166,6 +166,72 @@ describe('PowerService HTTP contract', () => {
       'latitude-min=0&latitude-max=2&longitude-min=1&longitude-max=3',
     );
   });
+  it.each(['point', 'region'] as const)(
+    'preserves custom %s year windows on supported products',
+    async (geometry) => {
+      const fetcher = vi.fn<typeof fetch>(async (url) => {
+        if (String(url).includes('/regional?'))
+          return Response.json({ type: 'FeatureCollection', features: [] });
+        if (String(url).includes('/point?'))
+          return Response.json({ ...point, properties: { parameter: {} } });
+        return respond(url);
+      });
+      const instance = service(fetcher);
+      const pending =
+        geometry === 'point'
+          ? instance.point(
+              daily({
+                temporalResolution: 'climatology',
+                startDate: undefined,
+                endDate: undefined,
+                startYear: 1991,
+                endYear: 2020,
+              }),
+              createMockContext(),
+            )
+          : instance.region(
+              RegionRequestSchema.parse({
+                temporalResolution: 'monthly',
+                latitudeMin: 0,
+                latitudeMax: 2,
+                longitudeMin: 0,
+                longitudeMax: 2,
+                parameter: 'T2M',
+                startYear: 1991,
+                endYear: 2020,
+              }),
+              createMockContext(),
+            );
+      await vi.advanceTimersByTimeAsync(5000);
+      const result = await pending;
+      const url = new URL(String(fetcher.mock.calls.at(-1)?.[0]));
+      expect(url.searchParams.get('start')).toBe('1991');
+      expect(url.searchParams.get('end')).toBe('2020');
+      expect(result.request).toMatchObject({ startYear: 1991, endYear: 2020 });
+    },
+  );
+  it.each([{ startYear: 1991 }, { endYear: 2020 }, { startYear: 1991, endYear: 2020 }])(
+    'rejects raw regional climatology year fields before references: %j',
+    async (years) => {
+      const fetcher = vi.fn<typeof fetch>(async (url) => respond(url));
+      const input = {
+        ...RegionRequestSchema.parse({
+          temporalResolution: 'climatology',
+          latitudeMin: 0,
+          latitudeMax: 2,
+          longitudeMin: 0,
+          longitudeMax: 2,
+          parameter: 'T2M',
+        }),
+        ...years,
+      };
+      await expect(service(fetcher).region(input, createMockContext())).rejects.toMatchObject({
+        data: { reason: 'invalid_window' },
+        message: expect.stringContaining('nasa_power_get_climatology'),
+      });
+      expect(fetcher).not.toHaveBeenCalled();
+    },
+  );
   it.each([
     [{ endDate: '1981-12-31' }, 'invalid_window'],
     [{ endDate: '2027-01-01' }, 'invalid_window'],

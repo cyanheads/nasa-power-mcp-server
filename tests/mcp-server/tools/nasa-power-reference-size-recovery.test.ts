@@ -15,7 +15,7 @@ beforeEach(() => {
   vi.setSystemTime(new Date('2026-10-19T00:00:00Z'));
   canvas = initCanvasService({
     storage: createInMemoryStorage(),
-    config: { dataframeDropEnabled: false },
+    config: { maxCanvasesPerProcess: 8, dataframeDropEnabled: false },
   });
 });
 afterEach(async () => {
@@ -46,7 +46,10 @@ it.each(['dictionary', 'configuration', 'observations'] as const)(
         padding,
       });
     });
-    source = initPowerService({ fetch: fetcher, config: { dataframeDropEnabled: false } });
+    source = initPowerService({
+      fetch: fetcher,
+      config: { maxCanvasesPerProcess: 8, dataframeDropEnabled: false },
+    });
     const pending =
       endpoint === 'dictionary'
         ? runToolContract(searchParametersTool, { filter: 'T2M', limit: 1 })

@@ -19,6 +19,8 @@ it.each([
   async (provider, drop, available, enabled) => {
     vi.stubEnv('CANVAS_PROVIDER_TYPE', provider);
     vi.stubEnv('NASA_POWER_DATAFRAME_DROP_ENABLED', drop);
+    vi.stubEnv('CANVAS_TTL_MS', '60000');
+    vi.stubEnv('CANVAS_ABSOLUTE_CAP_MS', '120000');
     resetConfig();
     vi.resetModules();
     const { listReferenceTool } = await import(
@@ -32,8 +34,8 @@ it.each([
           available,
           dropEnabled: enabled,
           tableTtlInMs: 1_800_000,
-          canvasTtlInMs: 3_600_000,
-          absoluteLifetimeInMs: 21_600_000,
+          canvasTtlInMs: 60_000,
+          absoluteLifetimeInMs: 120_000,
         },
       ],
     });
@@ -41,6 +43,8 @@ it.each([
       .flatMap((block) => (block.type === 'text' ? [block.text] : []))
       .join('\n');
     expect(text).toContain('dropEnabled');
+    expect(text).toContain('60000');
+    expect(text).toContain('120000');
     expect(text.includes('Use nasa_power_dataframe_drop')).toBe(enabled);
   },
 );

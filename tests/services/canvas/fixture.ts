@@ -39,23 +39,32 @@ export function dataset(count = 400) {
 }
 
 /** Build native engine, registry and service; only state and wall clock are test boundaries. */
-export async function nativeFixture(dropEnabled = true) {
+export async function nativeFixture(
+  dropEnabled = true,
+  sizing: {
+    maxCanvasesPerProcess?: number;
+    maxCanvasesPerTenant?: number;
+    ttlMs?: number;
+    absoluteCapMs?: number;
+    memoryLimitMb?: number;
+  } = {},
+) {
   const directory = await mkdtemp(join(tmpdir(), 'nasa-power-canvas-test-'));
   let clock = Date.now();
   const provider = new DuckdbProvider({
     defaultRowLimit: 1000,
     exportRootPath: directory,
     tempRootPath: directory,
-    memoryLimitMb: 256,
+    memoryLimitMb: sizing.memoryLimitMb ?? 256,
     schemaSniffRows: 100,
   });
   const registry = new CanvasRegistry(
     provider,
     {
-      absoluteCapMs: POWER_LIMITS.canvasAbsoluteTtlMs,
-      maxCanvasesPerTenant: 20,
+      absoluteCapMs: sizing.absoluteCapMs ?? POWER_LIMITS.canvasAbsoluteTtlMs,
+      maxCanvasesPerTenant: sizing.maxCanvasesPerTenant ?? 20,
       sweeperIntervalMs: 0,
-      ttlMs: POWER_LIMITS.canvasTtlMs,
+      ttlMs: sizing.ttlMs ?? POWER_LIMITS.canvasTtlMs,
     },
     () => clock,
   );
@@ -65,7 +74,14 @@ export async function nativeFixture(dropEnabled = true) {
   const service = initCanvasService({
     canvas,
     storage,
-    config: { dataframeDropEnabled: dropEnabled },
+    config: {
+      maxCanvasesPerProcess: sizing.maxCanvasesPerProcess ?? 8,
+      dataframeDropEnabled: dropEnabled,
+    },
+    canvasLimits: {
+      maxCanvasesPerTenant: sizing.maxCanvasesPerTenant ?? POWER_LIMITS.canvasesPerTenant,
+      absoluteCapMs: sizing.absoluteCapMs ?? POWER_LIMITS.canvasAbsoluteTtlMs,
+    },
     now: () => clock,
     reconciliationMs: 60_000,
   });

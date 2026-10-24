@@ -3,12 +3,14 @@ import { z } from '@cyanheads/mcp-ts-core';
 import type { ColumnSchema } from '@cyanheads/mcp-ts-core/canvas';
 import {
   type BucketSummary,
+  type CellSummary,
   type DatasetHandle,
   DatasetHandleSchema,
   JsonValueSchema,
   type NumericSummary,
   type ObservationRow,
   type ParameterMetadata,
+  ParameterMetadataSchema,
 } from '../power/types.js';
 
 /** Narrow scientific envelope; presentation preserves every additional caller field. */
@@ -22,7 +24,11 @@ export type PresentedDataset<T extends PresentableDataset> = Omit<T, 'rows'> & {
   rowCount: number;
   dataset: DatasetHandle | null;
   summaryDatasets?: { buckets: DatasetHandle; locations: DatasetHandle };
+  summaryDataset?: DatasetHandle;
+  summaryCount?: number;
 };
+/** Regional summaries before optional related-table staging. */
+export type RegionalSummaryDataset = PresentableDataset & { summaries: CellSummary[] };
 /** Complete comparison summaries before presentation; other scientific fields remain untouched. */
 export type ComparisonDataset = PresentableDataset & {
   summaries: (Omit<BucketSummary, 'units'> & { units?: string | undefined })[];
@@ -61,8 +67,7 @@ export const DescribedTableSchema = z
             type: z.string().describe('Actual native SQL type'),
             nullable: z.boolean().describe('Whether SQL NULL is permitted'),
             units: z.string().optional().describe('Source physical units'),
-            valueKind: z
-              .enum(['number', 'orientation'])
+            valueKind: ParameterMetadataSchema.shape.valueKind
               .optional()
               .describe('Scientific value interpretation'),
           })

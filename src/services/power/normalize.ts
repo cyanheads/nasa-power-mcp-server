@@ -2,7 +2,7 @@
 import { z } from '@cyanheads/mcp-ts-core';
 import { POWER_LIMITS } from '../../config/server-config.js';
 import { powerError, shapeError } from './errors.js';
-import { presetParameters, TILTED_ALIAS } from './presets.js';
+import { presetParameters, TILTED_ALIAS, TILTED_GROUP_ALIASES } from './presets.js';
 import { summarizeCells, summarizeRows } from './summarize.js';
 import {
   type AccessMetadata,
@@ -176,7 +176,12 @@ function parameters(payload: PointPayload | RegionPayload): ParameterMetadata[] 
       code,
       ...(typeof units === 'string' ? { units } : {}),
       ...(typeof longname === 'string' ? { longName: longname } : {}),
-      valueKind: units === 'N/S Orientation' || code.endsWith('_ORT') ? 'orientation' : 'number',
+      valueKind:
+        code === 'T_ZONES' || code === 'TM_ZONES'
+          ? 'categorical'
+          : units === 'N/S Orientation' || code.endsWith('_ORT')
+            ? 'orientation'
+            : 'number',
       extra,
     };
   });
@@ -231,7 +236,9 @@ function featureRows(
         }
         reasons.set(period.periodKey, value === undefined ? 'absent' : 'fill');
       } else if (
-        (parameter.valueKind === 'number' && typeof value === 'number' && Number.isFinite(value)) ||
+        (parameter.valueKind !== 'orientation' &&
+          typeof value === 'number' &&
+          Number.isFinite(value)) ||
         (parameter.valueKind === 'orientation' && typeof value === 'string')
       )
         row[parameter.code] = value;
@@ -250,15 +257,26 @@ function omissions(
   messages: string[],
 ) {
   const codes = new Set(params.map((parameter) => parameter.code));
-  const expanded = params
-    .filter((parameter) => parameter.code.startsWith('SI_TILTED_'))
-    .map((parameter) => parameter.code);
   const requested = requestedParameters(request);
+  const expansions = Object.fromEntries(
+    requested.flatMap((code) => {
+      const prefix =
+        code === TILTED_ALIAS
+          ? 'SI_TILTED_'
+          : TILTED_GROUP_ALIASES.some((alias) => alias === code)
+            ? `${code}_`
+            : undefined;
+      if (!prefix) return [];
+      const members = params
+        .filter((parameter) => parameter.code.startsWith(prefix))
+        .map((parameter) => parameter.code);
+      return members.length ? [[code, members]] : [];
+    }),
+  );
   return {
-    expansions:
-      requested.includes(TILTED_ALIAS) && expanded.length ? { [TILTED_ALIAS]: expanded } : {},
+    expansions,
     omittedParameters: requested
-      .filter((code) => !codes.has(code) && !(code === TILTED_ALIAS && expanded.length))
+      .filter((code) => !codes.has(code) && !Object.hasOwn(expansions, code))
       .map((code) => ({ code, messages })),
   };
 }

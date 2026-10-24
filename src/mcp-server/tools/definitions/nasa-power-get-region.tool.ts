@@ -15,7 +15,7 @@ import {
 export const getRegionTool = tool('nasa_power_get_region', {
   title: 'Get NASA POWER region',
   description:
-    'Retrieve one parameter over ordered latitude/longitude bounds spanning 2–10 degrees per axis, at daily, monthly or climatology resolution. Split antimeridian regions into separate calls. Returns cell identities and separate per-period equal-weight cell statistics, not area-weighted estimates. Oversized results stage every row with a preview and canvas handle.',
+    'Retrieve one parameter over ordered latitude/longitude bounds spanning 2–10 degrees per axis, at daily, monthly or climatology resolution. Regional climatology uses the precomputed source period and accepts no year fields; use nasa_power_get_climatology for custom years at a point. Split antimeridian regions into separate calls. Returns cell identities and separate per-period equal-weight cell statistics, not area-weighted estimates. Oversized observations and summaries stage completely with previews, exact counts and SQL handles; query summaryDataset in summaryIndex order.',
   annotations: { readOnlyHint: true, openWorldHint: true },
   input: z.discriminatedUnion('temporalResolution', [
     RegionRequestSchema.options[0].extend({
@@ -33,6 +33,14 @@ export const getRegionTool = tool('nasa_power_get_region', {
     dataset: DatasetHandleSchema.nullable().describe(
       'Full-table handle on overflow, otherwise null',
     ),
+    summaryCount: z
+      .number()
+      .int()
+      .optional()
+      .describe('Exact complete cross-cell summary count when summaries are staged'),
+    summaryDataset: DatasetHandleSchema.optional().describe(
+      'Complete cross-cell summaries ordered by summaryIndex; SQL NULL units restore an omitted source unit',
+    ),
   }),
   errors: [
     {
@@ -48,7 +56,7 @@ export const getRegionTool = tool('nasa_power_get_region', {
       code: JsonRpcErrorCode.ValidationError,
       when: 'The requested window is reversed or outside source coverage',
       recovery:
-        'Use nasa_power_list_reference topic coverage and send an ordered window within the supported period.',
+        'Use nasa_power_list_reference topic coverage and send an ordered window. Omit year fields for regional climatology; use nasa_power_get_climatology for custom point years.',
       thrownBy: 'service',
     },
     {
@@ -132,7 +140,7 @@ export const getRegionTool = tool('nasa_power_get_region', {
       const power = getPowerService();
       const budget = power.createCallBudget(producerCtx);
       const callCtx = { ...producerCtx, signal: budget.signal };
-      return canvas.present(
+      return canvas.presentRegion(
         await power.region(request, callCtx, budget),
         canvas_id,
         callCtx,

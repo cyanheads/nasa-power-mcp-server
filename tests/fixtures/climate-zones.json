@@ -1,0 +1,550 @@
+{
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-120, 35, 623.36]
+      },
+      "properties": {
+        "parameter": {
+          "TM_ZONES": {
+            "JAN": -999,
+            "FEB": -999,
+            "MAR": -999,
+            "APR": -999,
+            "MAY": -999,
+            "JUN": -999,
+            "JUL": -999,
+            "AUG": -999,
+            "SEP": -999,
+            "OCT": -999,
+            "NOV": -999,
+            "DEC": -999,
+            "ANN": 31
+          }
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-119.375, 35, 783.58]
+      },
+      "properties": {
+        "parameter": {
+          "TM_ZONES": {
+            "JAN": -999,
+            "FEB": -999,
+            "MAR": -999,
+            "APR": -999,
+            "MAY": -999,
+            "JUN": -999,
+            "JUL": -999,
+            "AUG": -999,
+            "SEP": -999,
+            "OCT": -999,
+            "NOV": -999,
+            "DEC": -999,
+            "ANN": 32
+          }
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-118.75, 35, 897.95]
+      },
+      "properties": {
+        "parameter": {
+          "TM_ZONES": {
+            "JAN": -999,
+            "FEB": -999,
+            "MAR": -999,
+            "APR": -999,
+            "MAY": -999,
+            "JUN": -999,
+            "JUL": -999,
+            "AUG": -999,
+            "SEP": -999,
+            "OCT": -999,
+            "NOV": -999,
+            "DEC": -999,
+            "ANN": 32
+          }
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-118.125, 35, 986.38]
+      },
+      "properties": {
+        "parameter": {
+          "TM_ZONES": {
+            "JAN": -999,
+            "FEB": -999,
+            "MAR": -999,
+            "APR": -999,
+            "MAY": -999,
+            "JUN": -999,
+            "JUL": -999,
+            "AUG": -999,
+            "SEP": -999,
+            "OCT": -999,
+            "NOV": -999,
+            "DEC": -999,
+            "ANN": 32
+          }
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-120, 35.5, 390.77]
+      },
+      "properties": {
+        "parameter": {
+          "TM_ZONES": {
+            "JAN": -999,
+            "FEB": -999,
+            "MAR": -999,
+            "APR": -999,
+            "MAY": -999,
+            "JUN": -999,
+            "JUL": -999,
+            "AUG": -999,
+            "SEP": -999,
+            "OCT": -999,
+            "NOV": -999,
+            "DEC": -999,
+            "ANN": 32
+          }
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-119.375, 35.5, 175.7]
+      },
+      "properties": {
+        "parameter": {
+          "TM_ZONES": {
+            "JAN": -999,
+            "FEB": -999,
+            "MAR": -999,
+            "APR": -999,
+            "MAY": -999,
+            "JUN": -999,
+            "JUL": -999,
+            "AUG": -999,
+            "SEP": -999,
+            "OCT": -999,
+            "NOV": -999,
+            "DEC": -999,
+            "ANN": 22
+          }
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-118.75, 35.5, 736.06]
+      },
+      "properties": {
+        "parameter": {
+          "TM_ZONES": {
+            "JAN": -999,
+            "FEB": -999,
+            "MAR": -999,
+            "APR": -999,
+            "MAY": -999,
+            "JUN": -999,
+            "JUL": -999,
+            "AUG": -999,
+            "SEP": -999,
+            "OCT": -999,
+            "NOV": -999,
+            "DEC": -999,
+            "ANN": 32
+          }
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-118.125, 35.5, 1244.73]
+      },
+      "properties": {
+        "parameter": {
+          "TM_ZONES": {
+            "JAN": -999,
+            "FEB": -999,
+            "MAR": -999,
+            "APR": -999,
+            "MAY": -999,
+            "JUN": -999,
+            "JUL": -999,
+            "AUG": -999,
+            "SEP": -999,
+            "OCT": -999,
+            "NOV": -999,
+            "DEC": -999,
+            "ANN": 32
+          }
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-120, 36, 221.04]
+      },
+      "properties": {
+        "parameter": {
+          "TM_ZONES": {
+            "JAN": -999,
+            "FEB": -999,
+            "MAR": -999,
+            "APR": -999,
+            "MAY": -999,
+            "JUN": -999,
+            "JUL": -999,
+            "AUG": -999,
+            "SEP": -999,
+            "OCT": -999,
+            "NOV": -999,
+            "DEC": -999,
+            "ANN": 32
+          }
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-119.375, 36, 106.13]
+      },
+      "properties": {
+        "parameter": {
+          "TM_ZONES": {
+            "JAN": -999,
+            "FEB": -999,
+            "MAR": -999,
+            "APR": -999,
+            "MAY": -999,
+            "JUN": -999,
+            "JUL": -999,
+            "AUG": -999,
+            "SEP": -999,
+            "OCT": -999,
+            "NOV": -999,
+            "DEC": -999,
+            "ANN": 22
+          }
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-118.75, 36, 1091.16]
+      },
+      "properties": {
+        "parameter": {
+          "TM_ZONES": {
+            "JAN": -999,
+            "FEB": -999,
+            "MAR": -999,
+            "APR": -999,
+            "MAY": -999,
+            "JUN": -999,
+            "JUL": -999,
+            "AUG": -999,
+            "SEP": -999,
+            "OCT": -999,
+            "NOV": -999,
+            "DEC": -999,
+            "ANN": 32
+          }
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-118.125, 36, 1914.17]
+      },
+      "properties": {
+        "parameter": {
+          "TM_ZONES": {
+            "JAN": -999,
+            "FEB": -999,
+            "MAR": -999,
+            "APR": -999,
+            "MAY": -999,
+            "JUN": -999,
+            "JUL": -999,
+            "AUG": -999,
+            "SEP": -999,
+            "OCT": -999,
+            "NOV": -999,
+            "DEC": -999,
+            "ANN": 42
+          }
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-120, 36.5, 141.07]
+      },
+      "properties": {
+        "parameter": {
+          "TM_ZONES": {
+            "JAN": -999,
+            "FEB": -999,
+            "MAR": -999,
+            "APR": -999,
+            "MAY": -999,
+            "JUN": -999,
+            "JUL": -999,
+            "AUG": -999,
+            "SEP": -999,
+            "OCT": -999,
+            "NOV": -999,
+            "DEC": -999,
+            "ANN": 22
+          }
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-119.375, 36.5, 249.47]
+      },
+      "properties": {
+        "parameter": {
+          "TM_ZONES": {
+            "JAN": -999,
+            "FEB": -999,
+            "MAR": -999,
+            "APR": -999,
+            "MAY": -999,
+            "JUN": -999,
+            "JUL": -999,
+            "AUG": -999,
+            "SEP": -999,
+            "OCT": -999,
+            "NOV": -999,
+            "DEC": -999,
+            "ANN": 22
+          }
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-118.75, 36.5, 1747.77]
+      },
+      "properties": {
+        "parameter": {
+          "TM_ZONES": {
+            "JAN": -999,
+            "FEB": -999,
+            "MAR": -999,
+            "APR": -999,
+            "MAY": -999,
+            "JUN": -999,
+            "JUL": -999,
+            "AUG": -999,
+            "SEP": -999,
+            "OCT": -999,
+            "NOV": -999,
+            "DEC": -999,
+            "ANN": 41
+          }
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-118.125, 36.5, 2238.18]
+      },
+      "properties": {
+        "parameter": {
+          "TM_ZONES": {
+            "JAN": -999,
+            "FEB": -999,
+            "MAR": -999,
+            "APR": -999,
+            "MAY": -999,
+            "JUN": -999,
+            "JUL": -999,
+            "AUG": -999,
+            "SEP": -999,
+            "OCT": -999,
+            "NOV": -999,
+            "DEC": -999,
+            "ANN": 53
+          }
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-120, 37, 195.15]
+      },
+      "properties": {
+        "parameter": {
+          "TM_ZONES": {
+            "JAN": -999,
+            "FEB": -999,
+            "MAR": -999,
+            "APR": -999,
+            "MAY": -999,
+            "JUN": -999,
+            "JUL": -999,
+            "AUG": -999,
+            "SEP": -999,
+            "OCT": -999,
+            "NOV": -999,
+            "DEC": -999,
+            "ANN": 32
+          }
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-119.375, 37, 1039.15]
+      },
+      "properties": {
+        "parameter": {
+          "TM_ZONES": {
+            "JAN": -999,
+            "FEB": -999,
+            "MAR": -999,
+            "APR": -999,
+            "MAY": -999,
+            "JUN": -999,
+            "JUL": -999,
+            "AUG": -999,
+            "SEP": -999,
+            "OCT": -999,
+            "NOV": -999,
+            "DEC": -999,
+            "ANN": 31
+          }
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-118.75, 37, 2525.2]
+      },
+      "properties": {
+        "parameter": {
+          "TM_ZONES": {
+            "JAN": -999,
+            "FEB": -999,
+            "MAR": -999,
+            "APR": -999,
+            "MAY": -999,
+            "JUN": -999,
+            "JUL": -999,
+            "AUG": -999,
+            "SEP": -999,
+            "OCT": -999,
+            "NOV": -999,
+            "DEC": -999,
+            "ANN": 61
+          }
+        }
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-118.125, 37, 2070.23]
+      },
+      "properties": {
+        "parameter": {
+          "TM_ZONES": {
+            "JAN": -999,
+            "FEB": -999,
+            "MAR": -999,
+            "APR": -999,
+            "MAY": -999,
+            "JUN": -999,
+            "JUL": -999,
+            "AUG": -999,
+            "SEP": -999,
+            "OCT": -999,
+            "NOV": -999,
+            "DEC": -999,
+            "ANN": 51
+          }
+        }
+      }
+    }
+  ],
+  "header": {
+    "title": "NASA/POWER Source Native Resolution Climatology Climatologies",
+    "api": {
+      "version": "v2.10.1",
+      "name": "POWER Climatology API"
+    },
+    "sources": ["MERRA2", "POWER"],
+    "fill_value": -999,
+    "time_standard": "LST",
+    "start": "20010101",
+    "end": "20251231"
+  },
+  "messages": [
+    "The requested parameters are retrieved from a pre-computed climatological period (January 2001 - December 2025)"
+  ],
+  "parameters": {
+    "TM_ZONES": {
+      "units": "zones",
+      "longname": "Climate Thermal and Moisture Zones"
+    }
+  },
+  "times": {
+    "data": 0.06,
+    "process": 0.01
+  },
+  "type": "FeatureCollection"
+}

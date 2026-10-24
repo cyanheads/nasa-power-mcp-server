@@ -1,4 +1,5 @@
 /** @fileoverview Scientific normalization and request contract behavior. @module tests/services/power/science */
+import { readFile } from 'node:fs/promises';
 import { z } from '@cyanheads/mcp-ts-core';
 import { describe, expect, it } from 'vitest';
 import {
@@ -53,6 +54,38 @@ describe('scientific contracts', () => {
     expect(schema.properties?.startDate).toMatchObject({ pattern: '^\\d{4}-\\d{2}-\\d{2}$' });
     expect(() => request({ startDate: '2024-02-30' })).toThrow();
   });
+  it.each(['T_ZONES', 'TM_ZONES'])(
+    'retains numeric %s categories and excludes every arithmetic path',
+    (code) => {
+      const source = payload({
+        [code]: { JAN: 22, FEB: 61, MAR: -999, ANN: 34 },
+        T2M: { JAN: 1, FEB: 3, ANN: 8 },
+      });
+      source.parameters = { [code]: { units: 'zones' }, T2M: { units: 'C' } };
+      const data = normalizePoint(
+        source,
+        request({
+          temporalResolution: 'climatology',
+          startDate: undefined,
+          endDate: undefined,
+          selection: { mode: 'parameters', parameters: [code, 'T2M'] },
+        }),
+        access,
+      );
+      expect(data.rows.map((row) => row[code])).toEqual([22, 61, null, 34]);
+      expect(data.parameters.find((p) => p.code === code)).toMatchObject({
+        valueKind: 'categorical',
+        units: 'zones',
+      });
+      expect(data.summaries.every((summary) => summary.parameter === 'T2M')).toBe(true);
+      expect(summarizeBuckets(data, 'one').every((summary) => summary.parameter === 'T2M')).toBe(
+        true,
+      );
+      expect(compareDatasets([{ locationId: 'one', dataset: data }]).sortMetrics).toEqual([
+        { locationId: 'one', parameter: 'T2M', mean: 8 },
+      ]);
+    },
+  );
   it('keeps normalized output requests compact and explicitly typed', () => {
     const schema = z.toJSONSchema(PowerDatasetSchema.shape.request, { io: 'output' });
     expect(schema).toMatchObject({
@@ -220,6 +253,91 @@ describe('scientific contracts', () => {
     expect(data.omittedParameters).toEqual([]);
     expect(data.rows[0]?.SI_TILTED_NEW_ORT).toBe('S');
     expect(data.summaries.every((summary) => summary.parameter === 'SI_TILTED_NEW')).toBe(true);
+  });
+  it.each(['SI_TILTED_AVG', 'SI_TILTED_MIN', 'SI_TILTED_MAX', 'combined'])(
+    'maps captured %s members without crossing group namespaces',
+    async (group) => {
+      const source = PointPayloadSchema.parse(
+        JSON.parse(
+          await readFile(new URL('../../fixtures/tilted-groups.json', import.meta.url), 'utf8'),
+        ),
+      );
+      const groups =
+        group === 'combined' ? ['SI_TILTED_AVG', 'SI_TILTED_MIN', 'SI_TILTED_MAX'] : [group];
+      source.properties.parameter = Object.fromEntries(
+        Object.entries(source.properties.parameter).filter(([code]) =>
+          groups.some((alias) => code.startsWith(`${alias}_`)),
+        ),
+      );
+      const selected = request({
+        temporalResolution: 'climatology',
+        startDate: undefined,
+        endDate: undefined,
+        selection: { mode: 'parameters', parameters: groups },
+      });
+      const data = normalizePoint(source, selected, access);
+      for (const alias of groups)
+        expect(data.expansions[alias]).toEqual(
+          [
+            'HORIZONTAL',
+            'LATITUDE',
+            'LAT_MINUS15',
+            'LAT_PLUS15',
+            'OPTIMAL',
+            'OPTIMAL_ANG',
+            'OPTIMAL_ANG_ORT',
+            'VERTICAL',
+          ].map((suffix) => `${alias}_${suffix}`),
+        );
+      expect(Object.keys(data.expansions)).toEqual(groups);
+      expect(data.omittedParameters).toEqual([]);
+      expect(data.parameters).toHaveLength(groups.length * 8);
+      expect(data.rows).toHaveLength(13);
+      for (const alias of groups) expect(data.rows[0]?.[`${alias}_OPTIMAL_ANG_ORT`]).toBe('S');
+      expect(data.metadata.messages).toEqual(source.messages ?? []);
+    },
+  );
+  it('maps only actually returned partial alias members and preserves missing groups and source messages', () => {
+    const source = payload({
+      SI_TILTED_AVG_HORIZONTAL: { JAN: 0, ANN: 2 },
+      SI_TILTED_AVG_OPTIMAL_ANG_ORT: { JAN: 'S', ANN: 'N' },
+    });
+    source.messages = ['Source omitted requested series'];
+    const selected = request({
+      temporalResolution: 'climatology',
+      startDate: undefined,
+      endDate: undefined,
+      selection: {
+        mode: 'parameters',
+        parameters: [
+          'SI_EF_TILTED_SURFACE',
+          'SI_TILTED_AVG',
+          'SI_TILTED_MIN',
+          'SI_TILTED_MAX',
+          'T2M',
+        ],
+      },
+    });
+    const data = normalizePoint(source, selected, access);
+    expect(data.expansions).toEqual({
+      SI_EF_TILTED_SURFACE: ['SI_TILTED_AVG_HORIZONTAL', 'SI_TILTED_AVG_OPTIMAL_ANG_ORT'],
+      SI_TILTED_AVG: ['SI_TILTED_AVG_HORIZONTAL', 'SI_TILTED_AVG_OPTIMAL_ANG_ORT'],
+    });
+    expect(data.omittedParameters).toEqual(
+      ['SI_TILTED_MIN', 'SI_TILTED_MAX', 'T2M'].map((code) => ({
+        code,
+        messages: ['Source omitted requested series'],
+      })),
+    );
+    const empty = normalizePoint(payload({}), selected, access);
+    expect(empty.expansions).toEqual({});
+    expect(empty.omittedParameters.map((item) => item.code)).toEqual([
+      'SI_EF_TILTED_SURFACE',
+      'SI_TILTED_AVG',
+      'SI_TILTED_MIN',
+      'SI_TILTED_MAX',
+      'T2M',
+    ]);
   });
   it('distinguishes annual keys and UTC from LST without manufacturing dates', () => {
     expect(parsePeriod('202413', 'monthly')).toMatchObject({

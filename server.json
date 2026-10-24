@@ -7,6 +7,12 @@
     "source": "github"
   },
   "version": "0.2.0",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://nasa-power.caseyjhand.com/mcp"
+    }
+  ],
   "packages": [
     {
       "registryType": "npm",
@@ -24,27 +30,33 @@
         },
         {
           "name": "CANVAS_DEFAULT_MEMORY_LIMIT_MB",
-          "description": "Fixed per-engine memory limit in MiB, not total RSS or temporary disk.",
+          "description": "Per-canvas engine memory in MiB (integer >=64), not total RSS or temporary disk.",
           "format": "string",
-          "value": "256"
+          "default": "256"
         },
         {
           "name": "CANVAS_MAX_CANVASES_PER_TENANT",
-          "description": "Fixed tenant canvas limit.",
+          "description": "Positive tenant canvas limit; auth-none callers share one tenant.",
           "format": "string",
-          "value": "4"
+          "default": "4"
         },
         {
           "name": "CANVAS_TTL_MS",
-          "description": "Fixed sliding canvas lifetime in milliseconds.",
+          "description": "Positive sliding canvas lifetime in milliseconds.",
           "format": "string",
-          "value": "3600000"
+          "default": "3600000"
         },
         {
           "name": "CANVAS_ABSOLUTE_CAP_MS",
-          "description": "Fixed absolute canvas lifetime in milliseconds.",
+          "description": "Absolute canvas lifetime in milliseconds, at least the sliding TTL.",
           "format": "string",
-          "value": "21600000"
+          "default": "21600000"
+        },
+        {
+          "name": "NASA_POWER_MAX_CANVASES_PER_PROCESS",
+          "description": "Positive process canvas cap including pending and cleanup reservations.",
+          "format": "string",
+          "default": "8"
         },
         {
           "name": "NASA_POWER_DATAFRAME_DROP_ENABLED",
@@ -81,27 +93,27 @@
         },
         {
           "name": "CANVAS_DEFAULT_MEMORY_LIMIT_MB",
-          "description": "Fixed per-engine memory limit in MiB, not total RSS or temporary disk.",
+          "description": "Per-canvas engine memory in MiB (integer >=64), not total RSS or temporary disk.",
           "format": "string",
-          "value": "256"
+          "default": "256"
         },
         {
           "name": "CANVAS_MAX_CANVASES_PER_TENANT",
-          "description": "Fixed tenant canvas limit.",
+          "description": "Positive tenant canvas limit; auth-none callers share one tenant.",
           "format": "string",
-          "value": "4"
+          "default": "4"
         },
         {
           "name": "CANVAS_TTL_MS",
-          "description": "Fixed sliding canvas lifetime in milliseconds.",
+          "description": "Positive sliding canvas lifetime in milliseconds.",
           "format": "string",
-          "value": "3600000"
+          "default": "3600000"
         },
         {
           "name": "CANVAS_ABSOLUTE_CAP_MS",
-          "description": "Fixed absolute canvas lifetime in milliseconds.",
+          "description": "Absolute canvas lifetime in milliseconds, at least the sliding TTL.",
           "format": "string",
-          "value": "21600000"
+          "default": "21600000"
         },
         {
           "name": "NASA_POWER_DATAFRAME_DROP_ENABLED",
@@ -109,6 +121,12 @@
           "format": "boolean",
           "default": "false",
           "isRequired": false
+        },
+        {
+          "name": "NASA_POWER_MAX_CANVASES_PER_PROCESS",
+          "description": "Positive process canvas cap including pending and cleanup reservations.",
+          "format": "string",
+          "default": "8"
         },
         {
           "name": "MCP_TRANSPORT_TYPE",

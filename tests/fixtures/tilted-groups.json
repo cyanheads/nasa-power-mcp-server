@@ -1,0 +1,487 @@
+{
+  "type": "Feature",
+  "geometry": {
+    "type": "Point",
+    "coordinates": [-122.3, 47.6, 110.01]
+  },
+  "properties": {
+    "parameter": {
+      "SI_TILTED_MIN_HORIZONTAL": {
+        "JAN": 0.7486,
+        "FEB": 1.3339,
+        "MAR": 2.003,
+        "APR": 2.9726,
+        "MAY": 3.8738,
+        "JUN": 3.588,
+        "JUL": 4.8326,
+        "AUG": 4.116,
+        "SEP": 2.7569,
+        "OCT": 1.5634,
+        "NOV": 0.8491,
+        "DEC": 0.6226,
+        "ANN": 2.4384
+      },
+      "SI_TILTED_MIN_LAT_MINUS15": {
+        "JAN": 1.0142,
+        "FEB": 1.7875,
+        "MAR": 2.2102,
+        "APR": 3.0694,
+        "MAY": 3.7906,
+        "JUN": 3.4327,
+        "JUL": 4.7455,
+        "AUG": 4.3663,
+        "SEP": 3.2618,
+        "OCT": 2.0059,
+        "NOV": 1.1642,
+        "DEC": 0.9523,
+        "ANN": 2.6501
+      },
+      "SI_TILTED_MIN_LATITUDE": {
+        "JAN": 1.0654,
+        "FEB": 1.8626,
+        "MAR": 2.1576,
+        "APR": 2.9057,
+        "MAY": 3.4954,
+        "JUN": 3.1286,
+        "JUL": 4.3296,
+        "AUG": 4.1311,
+        "SEP": 3.2304,
+        "OCT": 2.057,
+        "NOV": 1.2247,
+        "DEC": 1.0332,
+        "ANN": 2.5517
+      },
+      "SI_TILTED_MIN_LAT_PLUS15": {
+        "JAN": 1.0651,
+        "FEB": 1.8432,
+        "MAR": 2.0138,
+        "APR": 2.621,
+        "MAY": 3.0521,
+        "JUN": 2.7002,
+        "JUL": 3.7164,
+        "AUG": 3.6854,
+        "SEP": 3.0298,
+        "OCT": 2.0038,
+        "NOV": 1.2242,
+        "DEC": 1.0598,
+        "ANN": 2.3345
+      },
+      "SI_TILTED_MIN_VERTICAL": {
+        "JAN": 0.9336,
+        "FEB": 1.5713,
+        "MAR": 1.5497,
+        "APR": 1.861,
+        "MAY": 2.004,
+        "JUN": 1.717,
+        "JUL": 2.2339,
+        "AUG": 2.4521,
+        "SEP": 2.2759,
+        "OCT": 1.6517,
+        "NOV": 1.0678,
+        "DEC": 0.965,
+        "ANN": 1.6903
+      },
+      "SI_TILTED_MIN_OPTIMAL": {
+        "JAN": 1.0718,
+        "FEB": 1.8667,
+        "MAR": 2.2104,
+        "APR": 3.1063,
+        "MAY": 3.9382,
+        "JUN": 3.6182,
+        "JUL": 4.9363,
+        "AUG": 4.4042,
+        "SEP": 3.2705,
+        "OCT": 2.057,
+        "NOV": 1.2322,
+        "DEC": 1.0598,
+        "ANN": 2.6556
+      },
+      "SI_TILTED_MIN_OPTIMAL_ANG": {
+        "JAN": 55,
+        "FEB": 52,
+        "MAR": 31.5,
+        "APR": 21.5,
+        "MAY": 13,
+        "JUN": 9,
+        "JUL": 14,
+        "AUG": 24,
+        "SEP": 37.5,
+        "OCT": 47.5,
+        "NOV": 55,
+        "DEC": 62,
+        "ANN": 28
+      },
+      "SI_TILTED_MIN_OPTIMAL_ANG_ORT": {
+        "JAN": "S",
+        "FEB": "S",
+        "MAR": "S",
+        "APR": "S",
+        "MAY": "S",
+        "JUN": "S",
+        "JUL": "S",
+        "AUG": "S",
+        "SEP": "S",
+        "OCT": "S",
+        "NOV": "S",
+        "DEC": "S",
+        "ANN": "S"
+      },
+      "SI_TILTED_AVG_HORIZONTAL": {
+        "JAN": 1.045,
+        "FEB": 1.9452,
+        "MAR": 2.8975,
+        "APR": 4.1818,
+        "MAY": 5.2949,
+        "JUN": 5.7818,
+        "JUL": 6.4337,
+        "AUG": 5.4967,
+        "SEP": 4.0118,
+        "OCT": 2.3446,
+        "NOV": 1.2458,
+        "DEC": 0.8738,
+        "ANN": 3.4627
+      },
+      "SI_TILTED_AVG_LAT_MINUS15": {
+        "JAN": 1.6512,
+        "FEB": 2.748,
+        "MAR": 3.4171,
+        "APR": 4.4335,
+        "MAY": 5.2217,
+        "JUN": 5.501,
+        "JUL": 6.3,
+        "AUG": 5.8517,
+        "SEP": 4.8662,
+        "OCT": 3.235,
+        "NOV": 1.9565,
+        "DEC": 1.5139,
+        "ANN": 3.8914
+      },
+      "SI_TILTED_AVG_LATITUDE": {
+        "JAN": 1.8014,
+        "FEB": 2.8999,
+        "MAR": 3.3984,
+        "APR": 4.2175,
+        "MAY": 4.8098,
+        "JUN": 4.9793,
+        "JUL": 5.7307,
+        "AUG": 5.531,
+        "SEP": 4.8458,
+        "OCT": 3.3792,
+        "NOV": 2.1271,
+        "DEC": 1.6872,
+        "ANN": 3.7838
+      },
+      "SI_TILTED_AVG_LAT_PLUS15": {
+        "JAN": 1.853,
+        "FEB": 2.8951,
+        "MAR": 3.2136,
+        "APR": 3.8038,
+        "MAY": 4.177,
+        "JUN": 4.2478,
+        "JUL": 4.896,
+        "AUG": 4.9186,
+        "SEP": 4.5574,
+        "OCT": 3.3365,
+        "NOV": 2.179,
+        "DEC": 1.7647,
+        "ANN": 3.487
+      },
+      "SI_TILTED_AVG_VERTICAL": {
+        "JAN": 1.6853,
+        "FEB": 2.4883,
+        "MAR": 2.4922,
+        "APR": 2.6424,
+        "MAY": 2.6585,
+        "JUN": 2.58,
+        "JUL": 2.8846,
+        "AUG": 3.2218,
+        "SEP": 3.4104,
+        "OCT": 2.7905,
+        "NOV": 1.9603,
+        "DEC": 1.6452,
+        "ANN": 2.5382
+      },
+      "SI_TILTED_AVG_OPTIMAL": {
+        "JAN": 1.853,
+        "FEB": 2.9174,
+        "MAR": 3.4301,
+        "APR": 4.4626,
+        "MAY": 5.4096,
+        "JUN": 5.8282,
+        "JUL": 6.5662,
+        "AUG": 5.9016,
+        "SEP": 4.8907,
+        "OCT": 3.3862,
+        "NOV": 2.1794,
+        "DEC": 1.7683,
+        "ANN": 3.8916
+      },
+      "SI_TILTED_AVG_OPTIMAL_ANG": {
+        "JAN": 62.5,
+        "FEB": 54.5,
+        "MAR": 38.5,
+        "APR": 24.5,
+        "MAY": 14,
+        "JUN": 8.5,
+        "JUL": 13.5,
+        "AUG": 24,
+        "SEP": 39,
+        "OCT": 51.5,
+        "NOV": 61.5,
+        "DEC": 66.5,
+        "ANN": 31.5
+      },
+      "SI_TILTED_AVG_OPTIMAL_ANG_ORT": {
+        "JAN": "S",
+        "FEB": "S",
+        "MAR": "S",
+        "APR": "S",
+        "MAY": "S",
+        "JUN": "S",
+        "JUL": "S",
+        "AUG": "S",
+        "SEP": "S",
+        "OCT": "S",
+        "NOV": "S",
+        "DEC": "S",
+        "ANN": "S"
+      },
+      "SI_TILTED_MAX_HORIZONTAL": {
+        "JAN": 1.3546,
+        "FEB": 3.067,
+        "MAR": 4.2067,
+        "APR": 5.8241,
+        "MAY": 6.7531,
+        "JUN": 8.5982,
+        "JUL": 8.0592,
+        "AUG": 6.8124,
+        "SEP": 5.1898,
+        "OCT": 3.0722,
+        "NOV": 1.6788,
+        "DEC": 1.1666,
+        "ANN": 4.6486
+      },
+      "SI_TILTED_MAX_LAT_MINUS15": {
+        "JAN": 2.297,
+        "FEB": 4.7282,
+        "MAR": 5.2409,
+        "APR": 6.3,
+        "MAY": 6.6624,
+        "JUN": 8.2133,
+        "JUL": 7.8799,
+        "AUG": 7.2559,
+        "SEP": 6.3473,
+        "OCT": 4.3915,
+        "NOV": 2.7955,
+        "DEC": 2.208,
+        "ANN": 5.3599
+      },
+      "SI_TILTED_MAX_LATITUDE": {
+        "JAN": 2.5442,
+        "FEB": 5.0904,
+        "MAR": 5.2872,
+        "APR": 6.0163,
+        "MAY": 6.1277,
+        "JUN": 7.4062,
+        "JUL": 7.1537,
+        "AUG": 6.8515,
+        "SEP": 6.3312,
+        "OCT": 4.6253,
+        "NOV": 3.0773,
+        "DEC": 2.5032,
+        "ANN": 5.2512
+      },
+      "SI_TILTED_MAX_LAT_PLUS15": {
+        "JAN": 2.646,
+        "FEB": 5.1552,
+        "MAR": 5.0491,
+        "APR": 5.4281,
+        "MAY": 5.303,
+        "JUN": 6.259,
+        "JUL": 6.0912,
+        "AUG": 6.0794,
+        "SEP": 5.9585,
+        "OCT": 4.5931,
+        "NOV": 3.1807,
+        "DEC": 2.6498,
+        "ANN": 4.866
+      },
+      "SI_TILTED_MAX_VERTICAL": {
+        "JAN": 2.4389,
+        "FEB": 4.5019,
+        "MAR": 3.9408,
+        "APR": 3.7198,
+        "MAY": 3.3199,
+        "JUN": 3.6199,
+        "JUL": 3.5338,
+        "AUG": 3.9432,
+        "SEP": 4.4491,
+        "OCT": 3.8633,
+        "NOV": 2.8913,
+        "DEC": 2.5068,
+        "ANN": 3.5606
+      },
+      "SI_TILTED_MAX_OPTIMAL": {
+        "JAN": 2.6482,
+        "FEB": 5.1677,
+        "MAR": 5.3035,
+        "APR": 6.3235,
+        "MAY": 6.905,
+        "JUN": 8.6906,
+        "JUL": 8.2229,
+        "AUG": 7.3198,
+        "SEP": 6.3847,
+        "OCT": 4.6445,
+        "NOV": 3.181,
+        "DEC": 2.6642,
+        "ANN": 5.3616
+      },
+      "SI_TILTED_MAX_OPTIMAL_ANG": {
+        "JAN": 65,
+        "FEB": 58,
+        "MAR": 42.5,
+        "APR": 27,
+        "MAY": 14,
+        "JUN": 9.5,
+        "JUL": 13.5,
+        "AUG": 24,
+        "SEP": 39.5,
+        "OCT": 53,
+        "NOV": 63.5,
+        "DEC": 69,
+        "ANN": 34
+      },
+      "SI_TILTED_MAX_OPTIMAL_ANG_ORT": {
+        "JAN": "S",
+        "FEB": "S",
+        "MAR": "S",
+        "APR": "S",
+        "MAY": "S",
+        "JUN": "S",
+        "JUL": "S",
+        "AUG": "S",
+        "SEP": "S",
+        "OCT": "S",
+        "NOV": "S",
+        "DEC": "S",
+        "ANN": "S"
+      }
+    }
+  },
+  "header": {
+    "title": "NASA/POWER Source Native Resolution Climatology Climatologies",
+    "api": {
+      "version": "v2.10.1",
+      "name": "POWER Climatology API"
+    },
+    "sources": ["SYN1DEG", "POWER"],
+    "fill_value": -999,
+    "time_standard": "LST",
+    "range": "25-year Meteorological and Solar Monthly & Annual Climatologies (January 2001 - December 2025)"
+  },
+  "messages": [
+    "The requested parameters are retrieved from a pre-computed climatological period (January 2001 - December 2025)"
+  ],
+  "parameters": {
+    "SI_TILTED_MIN_HORIZONTAL": {
+      "units": "kW-hr/m^2/day",
+      "longname": "Minimum Solar Irradiance for Equator Facing Horizontal Surface"
+    },
+    "SI_TILTED_MIN_LAT_MINUS15": {
+      "units": "kW-hr/m^2/day",
+      "longname": "Minimum Solar Irradiance for Equator Facing Latitude Minus 15 Tilt"
+    },
+    "SI_TILTED_MIN_LATITUDE": {
+      "units": "kW-hr/m^2/day",
+      "longname": "Minimum Solar Irradiance for Equator Facing Latitude Tilt"
+    },
+    "SI_TILTED_MIN_LAT_PLUS15": {
+      "units": "kW-hr/m^2/day",
+      "longname": "Minimum Solar Irradiance for Equator Facing Latitude Plus 15 Tilt"
+    },
+    "SI_TILTED_MIN_VERTICAL": {
+      "units": "kW-hr/m^2/day",
+      "longname": "Minimum Solar Irradiance for Equator Facing Vertical Surface"
+    },
+    "SI_TILTED_MIN_OPTIMAL": {
+      "units": "kW-hr/m^2/day",
+      "longname": "Minimum Solar Irradiance Optimal"
+    },
+    "SI_TILTED_MIN_OPTIMAL_ANG": {
+      "units": "Degrees",
+      "longname": "Minimum Solar Irradiance Optimal Angle"
+    },
+    "SI_TILTED_MIN_OPTIMAL_ANG_ORT": {
+      "units": "N/S Orientation",
+      "longname": "Minimum Solar Irradiance Tilted Surface Orientation"
+    },
+    "SI_TILTED_AVG_HORIZONTAL": {
+      "units": "kW-hr/m^2/day",
+      "longname": "Solar Irradiance for Equator Facing Horizontal Surface"
+    },
+    "SI_TILTED_AVG_LAT_MINUS15": {
+      "units": "kW-hr/m^2/day",
+      "longname": "Solar Irradiance for Equator Facing Latitude Minus 15 Tilt"
+    },
+    "SI_TILTED_AVG_LATITUDE": {
+      "units": "kW-hr/m^2/day",
+      "longname": "Solar Irradiance for Equator Facing Latitude Tilt"
+    },
+    "SI_TILTED_AVG_LAT_PLUS15": {
+      "units": "kW-hr/m^2/day",
+      "longname": "Solar Irradiance for Equator Facing Latitude Plus 15 Tilt"
+    },
+    "SI_TILTED_AVG_VERTICAL": {
+      "units": "kW-hr/m^2/day",
+      "longname": "Solar Irradiance for Equator Facing Vertical Surface"
+    },
+    "SI_TILTED_AVG_OPTIMAL": {
+      "units": "kW-hr/m^2/day",
+      "longname": "Solar Irradiance Optimal"
+    },
+    "SI_TILTED_AVG_OPTIMAL_ANG": {
+      "units": "Degrees",
+      "longname": "Solar Irradiance Optimal Angle"
+    },
+    "SI_TILTED_AVG_OPTIMAL_ANG_ORT": {
+      "units": "N/S Orientation",
+      "longname": "Solar Irradiance Tilted Surface Orientation"
+    },
+    "SI_TILTED_MAX_HORIZONTAL": {
+      "units": "kW-hr/m^2/day",
+      "longname": "Maximum Solar Irradiance for Equator Facing Horizontal Surface"
+    },
+    "SI_TILTED_MAX_LAT_MINUS15": {
+      "units": "kW-hr/m^2/day",
+      "longname": "Maximum Solar Irradiance for Equator Facing Latitude Minus 15 Tilt"
+    },
+    "SI_TILTED_MAX_LATITUDE": {
+      "units": "kW-hr/m^2/day",
+      "longname": "Maximum Solar Irradiance for Equator Facing Latitude Tilt"
+    },
+    "SI_TILTED_MAX_LAT_PLUS15": {
+      "units": "kW-hr/m^2/day",
+      "longname": "Maximum Solar Irradiance for Equator Facing Latitude Plus 15 Tilt"
+    },
+    "SI_TILTED_MAX_VERTICAL": {
+      "units": "kW-hr/m^2/day",
+      "longname": "Maximum Solar Irradiance for Equator Facing Vertical Surface"
+    },
+    "SI_TILTED_MAX_OPTIMAL": {
+      "units": "kW-hr/m^2/day",
+      "longname": "Maximum Solar Irradiance Optimal"
+    },
+    "SI_TILTED_MAX_OPTIMAL_ANG": {
+      "units": "Degrees",
+      "longname": "Maximum Solar Irradiance Optimal Angle"
+    },
+    "SI_TILTED_MAX_OPTIMAL_ANG_ORT": {
+      "units": "N/S Orientation",
+      "longname": "Maximum Solar Irradiance Tilted Surface Orientation"
+    }
+  },
+  "times": {
+    "data": 1.209,
+    "process": 0.08
+  }
+}

@@ -1,4 +1,5 @@
 /** @fileoverview Compact faithful analytical rendering. @module services/canvas/format */
+import { markdownLink } from '@cyanheads/mcp-ts-core/utils';
 
 /** Preserve every value and newline, even when values contain Markdown fences. */
 export function formatFaithfully(value: object) {
@@ -16,10 +17,10 @@ export function formatFaithfully(value: object) {
   };
   const render = (item: unknown): string => {
     if (typeof item === 'string') {
-      const link = (url: string) =>
-        `[${url.replace(/[\\[\]]/g, '\\$&')}](<${url.replaceAll('>', '%3E')}>)`;
-      if (/^https?:\/\/[^\s<>]+$/.test(item)) return link(item);
-      const links = [...item.matchAll(/https?:\/\/[^\s<>]+/g)].map(([url]) => link(url));
+      if (/^https?:\/\/[^\s<>]+$/.test(item)) return markdownLink(item, item);
+      const links = [...item.matchAll(/https?:\/\/[^\s<>]+/g)].map(([url]) =>
+        markdownLink(url, url),
+      );
       return [literal(item), ...links].join('\n\n');
     }
     if (Array.isArray(item)) {

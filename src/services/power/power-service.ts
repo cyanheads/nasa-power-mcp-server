@@ -393,7 +393,7 @@ export class PowerService {
           'invalid_window',
           `Use an ordered ${request.temporalResolution} window from ${floor} through ${current}.`,
         );
-    } else {
+    } else if (request.temporalResolution === 'monthly' || 'latitude' in request) {
       if (
         (request.startYear === undefined) !== (request.endYear === undefined) ||
         (request.startYear !== undefined &&
@@ -496,6 +496,7 @@ export class PowerService {
     const end = configuration.settings?.end;
     if (
       request.temporalResolution === 'climatology' &&
+      'endYear' in request &&
       request.endYear !== undefined &&
       typeof end === 'string' &&
       request.endYear > Number(end.slice(0, 4))
@@ -508,7 +509,7 @@ export class PowerService {
       const requestedStart =
         request.temporalResolution === 'daily' || request.temporalResolution === 'hourly'
           ? request.startDate
-          : request.startYear === undefined
+          : !('startYear' in request) || request.startYear === undefined
             ? undefined
             : `${request.startYear}-01-01`;
       if (requestedStart && requestedStart < start.slice(0, 10))
@@ -533,7 +534,11 @@ export class PowerService {
     if (request.temporalResolution === 'hourly' || request.temporalResolution === 'daily') {
       query.set('start', request.startDate.replaceAll('-', ''));
       query.set('end', request.endDate.replaceAll('-', ''));
-    } else if (request.startYear !== undefined && request.endYear !== undefined) {
+    } else if (
+      'startYear' in request &&
+      request.startYear !== undefined &&
+      request.endYear !== undefined
+    ) {
       query.set('start', String(request.startYear));
       query.set('end', String(request.endYear));
     }
@@ -582,6 +587,14 @@ export class PowerService {
     ctx: Context,
     budget = this.createCallBudget(ctx),
   ): Promise<RegionalDataset> {
+    if (
+      input.temporalResolution === 'climatology' &&
+      (Object.hasOwn(input, 'startYear') || Object.hasOwn(input, 'endYear'))
+    )
+      throw powerError(
+        'invalid_window',
+        'Regional climatology uses the precomputed source period. Omit startYear and endYear, or use nasa_power_get_climatology for custom years.',
+      );
     const request = RegionRequestSchema.parse(input);
     const codes = await this.prepare(request, ctx, budget);
     const url = this.url(request, codes);

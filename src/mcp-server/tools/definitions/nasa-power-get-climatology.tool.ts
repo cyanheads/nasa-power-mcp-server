@@ -1,5 +1,6 @@
 /** @fileoverview Retrieve complete point climatology data. @module mcp-server/tools/definitions/nasa-power-get-climatology.tool */
 import { tool } from '@cyanheads/mcp-ts-core';
+import { CanvasIdSchema } from '@cyanheads/mcp-ts-core/canvas';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { formatFaithfully } from '@/services/canvas/format.js';
 import { NormalizedClimatologyRequestSchema, PowerRequestSchema } from '@/services/power/index.js';
@@ -8,15 +9,35 @@ import { PointOutputSchema, presentPoint } from './point-contracts.js';
 export const getClimatologyTool = tool('nasa_power_get_climatology', {
   title: 'Get NASA POWER climatology',
   description:
-    'Retrieve complete monthly and annual climatology at latitude/longitude. Optionally supply both startYear and endYear; omitted years use the source product range. Use nasa_power_list_reference for presets and tilted solar aliases. All returned records remain inline, including orientation text.',
+    'Retrieve complete monthly and annual climatology at latitude/longitude. Optionally supply both startYear and endYear; omitted years use the source product range. Use nasa_power_list_reference for presets and tilted solar aliases. Small profiles remain inline; larger profiles return a complete table handle and bounded preview, preserving orientation text. Supply canvas_id to reuse a returned workspace.',
   annotations: { readOnlyHint: true, openWorldHint: true },
-  input: PowerRequestSchema.options[3].omit({ temporalResolution: true }),
+  input: PowerRequestSchema.options[3].omit({ temporalResolution: true }).extend({
+    canvas_id: CanvasIdSchema.optional().describe(
+      'Reuse a returned canvas token for an oversized profile',
+    ),
+  }),
   output: PointOutputSchema.extend({
     request: NormalizedClimatologyRequestSchema.describe(
       'Normalized climatology request and corrections',
     ),
   }),
   errors: [
+    {
+      reason: 'canvas_required',
+      code: JsonRpcErrorCode.ConfigurationError,
+      when: 'Oversized observations require an enabled workspace',
+      recovery:
+        'Narrow the request for inline output, or use the npm or Docker distribution with CANVAS_PROVIDER_TYPE=duckdb.',
+      thrownBy: 'service',
+    },
+    {
+      reason: 'canvas_not_found',
+      code: JsonRpcErrorCode.NotFound,
+      when: 'The supplied workspace token is absent or expired',
+      recovery:
+        'Check canvas_id against the producing response, or rerun the producing tool to stage a fresh dataset.',
+      thrownBy: 'service',
+    },
     {
       reason: 'unsupported_parameter',
       code: JsonRpcErrorCode.ValidationError,
@@ -93,9 +114,10 @@ export const getClimatologyTool = tool('nasa_power_get_climatology', {
     },
   ],
   async handler(input, ctx) {
+    const { canvas_id, ...request } = input;
     const output = await presentPoint(
-      { ...input, temporalResolution: 'climatology' },
-      undefined,
+      { ...request, temporalResolution: 'climatology' },
+      canvas_id,
       ctx,
       'nasa_power_get_climatology',
     );

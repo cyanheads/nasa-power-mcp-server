@@ -175,7 +175,18 @@ const region = {
 export const RegionRequestSchema = z.discriminatedUnion('temporalResolution', [
   z.strictObject({ ...region, ...windows.daily }).describe('Daily regional request'),
   z.strictObject({ ...region, ...windows.monthly }).describe('Monthly regional request'),
-  z.strictObject({ ...region, ...windows.climatology }).describe('Climatology regional request'),
+  z
+    .strictObject(
+      { ...region, temporalResolution: windows.climatology.temporalResolution },
+      {
+        error: (issue) =>
+          issue.code === 'unrecognized_keys' &&
+          issue.keys.some((key) => key === 'startYear' || key === 'endYear')
+            ? 'Regional climatology accepts no year fields. Omit startYear and endYear, or use nasa_power_get_climatology for custom point years.'
+            : undefined,
+      },
+    )
+    .describe('Precomputed regional climatology; use point climatology for custom years'),
 ]);
 export type RegionRequest = z.infer<typeof RegionRequestSchema>;
 const { latitude: _lat, longitude: _lon, ...comparisonShared } = point;
@@ -287,7 +298,9 @@ export const ParameterMetadataSchema = z.object({
   code: CodeSchema,
   longName: z.string().optional().describe('Long parameter name supplied by NASA'),
   units: z.string().optional().describe('Exact source units without conversion'),
-  valueKind: z.enum(['number', 'orientation']).describe('Numeric measurement or orientation text'),
+  valueKind: z
+    .enum(['number', 'categorical', 'orientation'])
+    .describe('Numeric measurement, numeric category code or orientation text'),
   extra,
 });
 export type ParameterMetadata = z.infer<typeof ParameterMetadataSchema>;
@@ -457,8 +470,7 @@ export const DatasetHandleSchema = z.object({
           type: z.string().describe('Explicit DuckDB column type'),
           nullable: z.boolean().describe('Whether this column permits null values'),
           units: z.string().optional().describe('Exact source units for scientific columns'),
-          valueKind: z
-            .enum(['number', 'orientation'])
+          valueKind: ParameterMetadataSchema.shape.valueKind
             .optional()
             .describe('Scientific value kind when applicable'),
         })

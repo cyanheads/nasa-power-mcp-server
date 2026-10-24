@@ -34,10 +34,13 @@ const fetcher = vi.fn<typeof fetch>(async () => {
 describe('published and effective parameter caps', () => {
   beforeEach(() => {
     fetcher.mockClear();
-    source = initPowerService({ fetch: fetcher, config: { dataframeDropEnabled: false } });
+    source = initPowerService({
+      fetch: fetcher,
+      config: { maxCanvasesPerProcess: 8, dataframeDropEnabled: false },
+    });
     canvas = initCanvasService({
       storage: createInMemoryStorage(),
-      config: { dataframeDropEnabled: false },
+      config: { maxCanvasesPerProcess: 8, dataframeDropEnabled: false },
     });
   });
   afterEach(async () => {

@@ -38,3 +38,5 @@ export const WIND_SURFACES = {
 } as const;
 /** Verified climatology alias; returned members remain dynamic. */
 export const TILTED_ALIAS = 'SI_EF_TILTED_SURFACE';
+/** Dictionary-advertised groups expand only within their returned member namespace. */
+export const TILTED_GROUP_ALIASES = ['SI_TILTED_AVG', 'SI_TILTED_MIN', 'SI_TILTED_MAX'] as const;

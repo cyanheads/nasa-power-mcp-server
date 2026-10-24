@@ -9,6 +9,7 @@ import { searchParametersTool } from '@/mcp-server/tools/definitions/nasa-power-
 import { initCanvasService } from '@/services/canvas/index.js';
 import { initPowerService } from '@/services/power/index.js';
 import { PRESETS } from '@/services/power/presets.js';
+import { markdownText } from '../../markdown-text.js';
 
 const input = {
   temporalResolution: 'daily' as const,
@@ -56,11 +57,52 @@ function failure(result: Awaited<ReturnType<typeof runToolContract>>, reason: st
     error: { data: { reason, recovery: { hint: expect.any(String) } } },
   });
   const { error } = result.structuredContent as { error: { data: { recovery: { hint: string } } } };
-  expect(text(result)).toContain(error.data.recovery.hint);
+  expect(markdownText(text(result))).toContain(error.data.recovery.hint);
   expect(text(result)).toContain(reason);
 }
 
 describe('point tool consumption contracts', () => {
+  it('explains point-only custom climatology years and categorical exclusions on both surfaces', async () => {
+    const coverage = await runToolContract(listReferenceTool, { topic: 'coverage' });
+    const coverageGuidance = (coverage.structuredContent as { guidance: string[] }).guidance.join(
+      ' ',
+    );
+    expect(coverageGuidance).toContain('Regional climatology accepts no year fields');
+    expect(markdownText(text(coverage))).toContain('Regional climatology accepts no year fields');
+    const missing = await runToolContract(listReferenceTool, { topic: 'missing_data' });
+    expect((missing.structuredContent as { guidance: string[] }).guidance.join(' ')).toContain(
+      'categorical',
+    );
+    expect(markdownText(text(missing))).toContain('TM_ZONES');
+  });
+  it.each(['SI_TILTED_AVG', 'SI_TILTED_MIN', 'SI_TILTED_MAX'])(
+    'reports returned %s aliases and source messages on both surfaces',
+    async (alias) => {
+      entries = { [alias]: {} };
+      body = payload({
+        [`${alias}_HORIZONTAL`]: { JAN: 0, ANN: 2 },
+        [`${alias}_OPTIMAL_ANG_ORT`]: { JAN: 'S', ANN: 'N' },
+      });
+      const result = await settle(
+        runRaw(getClimatologyTool, {
+          latitude: 47,
+          longitude: -122,
+          selection: { mode: 'parameters', parameters: [alias] },
+        }),
+      );
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toMatchObject({
+        expansions: { [alias]: [`${alias}_HORIZONTAL`, `${alias}_OPTIMAL_ANG_ORT`] },
+        omittedParameters: [],
+        metadata: { messages: [message] },
+        rows: [{ [`${alias}_OPTIMAL_ANG_ORT`]: 'S' }, { [`${alias}_OPTIMAL_ANG_ORT`]: 'N' }],
+      });
+      const rendered = markdownText(text(result));
+      expect(rendered).toContain(alias);
+      expect(rendered).toContain(`${alias}_OPTIMAL_ANG_ORT`);
+      expect(rendered).toContain(message);
+    },
+  );
   it('publishes canonical wind long names and resolution-specific preset expansions on both paths', async () => {
     const wind = await runToolContract(listReferenceTool, { topic: 'wind_surfaces' });
     expect(wind.structuredContent).toMatchObject({
@@ -227,10 +269,13 @@ describe('point tool consumption contracts', () => {
     entries = dictionary;
     status = 200;
     fetcher.mockClear();
-    source = initPowerService({ fetch: fetcher, config: { dataframeDropEnabled: false } });
+    source = initPowerService({
+      fetch: fetcher,
+      config: { maxCanvasesPerProcess: 8, dataframeDropEnabled: false },
+    });
     canvas = initCanvasService({
       storage: createInMemoryStorage(),
-      config: { dataframeDropEnabled: false },
+      config: { maxCanvasesPerProcess: 8, dataframeDropEnabled: false },
     });
   });
   afterEach(async () => {
@@ -500,7 +545,7 @@ describe('point tool consumption contracts', () => {
       const result = await settle(runToolContract(getTimeseriesTool, input));
       failure(result, code === 429 ? 'upstream_rate_limited' : 'upstream_rejected');
       expect(result.structuredContent).toMatchObject({ error: { data: { messages: [message] } } });
-      expect(text(result)).toContain(message);
+      expect(markdownText(text(result))).toContain(message);
     },
   );
 
@@ -673,7 +718,10 @@ describe('point tool consumption contracts', () => {
     async (field) => {
       for (const invalid of [42, { invalid: true }]) {
         source.dispose();
-        source = initPowerService({ fetch: fetcher, config: { dataframeDropEnabled: false } });
+        source = initPowerService({
+          fetch: fetcher,
+          config: { maxCanvasesPerProcess: 8, dataframeDropEnabled: false },
+        });
         entries = { T2M: { [field]: invalid } };
         const result = await settle(
           runToolContract(searchParametersTool, { temporalResolution: 'monthly' }),
