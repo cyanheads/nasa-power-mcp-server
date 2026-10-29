@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.4.1](changelog/0.4.x/0.4.1.md) — 2026-10-28
+
+Overlapping data calls are admitted or wait briefly instead of failing at once, canvas_required refusals size their re-sendable split, and GDD* and monthly hour-extreme codes POWER cannot serve are rejected before any request.
+
 ## [0.4.0](changelog/0.4.x/0.4.0.md) — 2026-10-28
 
 Publishes the nasa-power-guide agent skill, served over MCP as skill://nasa-power-guide/SKILL.md, and moves to mcp-ts-core 0.13.18, which stops HTTP memory growth under Bun and keeps the framework build-only files out of the .mcpb bundle.

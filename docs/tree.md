@@ -1,6 +1,6 @@
 # nasa-power-mcp-server - Directory Structure
 
-Generated on: 2026-10-29 02:15:45
+Generated on: 2026-10-29 05:05:53
 
 ```text
 nasa-power-mcp-server/
@@ -168,6 +168,8 @@ nasa-power-mcp-server/
 │   │   │   ├── errors.ts
 │   │   │   ├── format.ts
 │   │   │   ├── index.ts
+│   │   │   ├── inline-split.ts
+│   │   │   ├── producer-estimate.ts
 │   │   │   └── types.ts
 │   │   └── power/
 │   │       ├── errors.ts
@@ -176,7 +178,8 @@ nasa-power-mcp-server/
 │   │       ├── power-service.ts
 │   │       ├── presets.ts
 │   │       ├── summarize.ts
-│   │       └── types.ts
+│   │       ├── types.ts
+│   │       └── unserved-parameters.ts
 │   └── index.ts
 ├── tests/
 │   ├── config/
@@ -185,6 +188,9 @@ nasa-power-mcp-server/
 │   ├── fixtures/
 │   │   ├── climate-zones.json
 │   │   ├── comparison-full.json
+│   │   ├── hour-extremes-regional.json
+│   │   ├── hour-group-monthly.json
+│   │   ├── hour-tracker-climatology.json
 │   │   ├── region-annual-summaries.json
 │   │   ├── region-annual.json
 │   │   ├── tilted-groups.json
@@ -213,6 +219,8 @@ nasa-power-mcp-server/
 │   │   │   ├── failure-boundaries.test.ts
 │   │   │   ├── fixture.ts
 │   │   │   ├── format.test.ts
+│   │   │   ├── inline-split.test.ts
+│   │   │   ├── producer-estimate.test.ts
 │   │   │   ├── request-lifetime.test.ts
 │   │   │   └── response-budget.test.ts
 │   │   └── power/
@@ -221,7 +229,9 @@ nasa-power-mcp-server/
 │   │       └── science.test.ts
 │   ├── smoke/
 │   ├── tools/
-│   └── markdown-text.ts
+│   ├── fake-power.ts
+│   ├── markdown-text.ts
+│   └── sized-refusal.ts
 ├── .dockerignore
 ├── .env.example
 ├── .gitattributes
