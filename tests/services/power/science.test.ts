@@ -339,6 +339,108 @@ describe('scientific contracts', () => {
       'T2M',
     ]);
   });
+  describe('hour-of-day and tracker group aliases', () => {
+    const fixture = async (name: string): Promise<unknown> =>
+      JSON.parse(await readFile(new URL(`../../fixtures/${name}`, import.meta.url), 'utf8'));
+    const hours = Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, '0'));
+    /** Member columns captured from POWER responses for each requested alias. */
+    const members: Record<string, string[]> = {
+      ALLSKY_SFC_SW_DWN_HR: hours.map((hour) => `ALLSKY_SFC_SW_DWN_${hour}`),
+      ALLSKY_SFC_SW_DWN_HR_MAX: hours.map((hour) => `ALLSKY_SFC_SW_DWN_${hour}_MAX`),
+      ALLSKY_SFC_SW_DWN_HR_MIN: hours.map((hour) => `ALLSKY_SFC_SW_DWN_${hour}_MIN`),
+      SI_TRACKER_AVG: ['DUAL', 'HSATEW', 'HSATNS', 'PSAT', 'VSAT'].map(
+        (mode) => `SI_TRACKER_AVG_${mode}`,
+      ),
+    };
+    const climatology = (parameters: string[]) =>
+      request({
+        temporalResolution: 'climatology',
+        startDate: undefined,
+        endDate: undefined,
+        selection: { mode: 'parameters', parameters },
+      });
+    it.each([
+      [['ALLSKY_SFC_SW_DWN_HR']],
+      [['ALLSKY_SFC_SW_DWN_HR_MAX']],
+      [['ALLSKY_SFC_SW_DWN_HR_MIN']],
+      [['SI_TRACKER_AVG']],
+      [['ALLSKY_SFC_SW_DWN_HR', 'ALLSKY_SFC_SW_DWN_HR_MAX', 'SI_TRACKER_AVG']],
+    ])('maps captured climatology members of %j without crossing namespaces', async (groups) => {
+      const source = PointPayloadSchema.parse(await fixture('hour-tracker-climatology.json'));
+      const expected = groups.flatMap((alias) => members[alias] ?? []);
+      source.properties.parameter = Object.fromEntries(
+        Object.entries(source.properties.parameter).filter(([code]) => expected.includes(code)),
+      );
+      const data = normalizePoint(source, climatology(groups), access);
+      expect(data.expansions).toEqual(
+        Object.fromEntries(groups.map((alias) => [alias, members[alias]])),
+      );
+      expect(data.omittedParameters).toEqual([]);
+      expect(data.parameters).toHaveLength(expected.length);
+      expect(data.rows).toHaveLength(13);
+      expect(data.metadata.messages).toEqual(source.messages);
+    });
+    it('maps a captured monthly hour group beside an ordinary code', async () => {
+      const data = normalizePoint(
+        PointPayloadSchema.parse(await fixture('hour-group-monthly.json')),
+        request({
+          temporalResolution: 'monthly',
+          startDate: undefined,
+          endDate: undefined,
+          startYear: 2023,
+          endYear: 2023,
+          selection: { mode: 'parameters', parameters: ['ALLSKY_SFC_SW_DWN_HR', 'T2M'] },
+        }),
+        access,
+      );
+      expect(data.expansions).toEqual({ ALLSKY_SFC_SW_DWN_HR: members.ALLSKY_SFC_SW_DWN_HR });
+      expect(data.omittedParameters).toEqual([]);
+      expect(data.rows).toHaveLength(13);
+      expect(data.rows.at(-1)).toMatchObject({ periodKind: 'annual', T2M: expect.any(Number) });
+    });
+    it('maps a captured regional hour-extreme group across every cell', async () => {
+      const data = normalizeRegion(
+        RegionPayloadSchema.parse(await fixture('hour-extremes-regional.json')),
+        RegionRequestSchema.parse({
+          temporalResolution: 'climatology',
+          latitudeMin: 40,
+          latitudeMax: 42,
+          longitudeMin: -95,
+          longitudeMax: -93,
+          parameter: 'ALLSKY_SFC_SW_DWN_HR_MAX',
+        }),
+        access,
+      );
+      expect(data.expansions).toEqual({
+        ALLSKY_SFC_SW_DWN_HR_MAX: members.ALLSKY_SFC_SW_DWN_HR_MAX,
+      });
+      expect(data.omittedParameters).toEqual([]);
+      expect(data.cellCount).toBe(4);
+      expect(data.rows).toHaveLength(52);
+    });
+    it('omits a group when only look-alike columns return', () => {
+      const source = payload({
+        T2M: { JAN: 1, ANN: 2 },
+        TS_ADJ_00: { JAN: 1, ANN: 2 },
+        T2MDEW_05: { JAN: 1, ANN: 2 },
+        ALLSKY_SFC_SW_DWN_05: { JAN: 1, ANN: 2 },
+        SI_TRACKER_MINIMUM: { JAN: 1, ANN: 2 },
+      });
+      source.messages = ['Source omitted requested series'];
+      const data = normalizePoint(
+        source,
+        climatology(['T2M', 'TS_HR', 'T2M_HR', 'ALLSKY_SFC_SW_DWN_HR_MAX', 'SI_TRACKER_MIN']),
+        access,
+      );
+      expect(data.expansions).toEqual({});
+      expect(data.omittedParameters).toEqual(
+        ['TS_HR', 'T2M_HR', 'ALLSKY_SFC_SW_DWN_HR_MAX', 'SI_TRACKER_MIN'].map((code) => ({
+          code,
+          messages: ['Source omitted requested series'],
+        })),
+      );
+    });
+  });
   it('distinguishes annual keys and UTC from LST without manufacturing dates', () => {
     expect(parsePeriod('202413', 'monthly')).toMatchObject({
       periodKind: 'annual',

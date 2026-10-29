@@ -1,0 +1,1494 @@
+{
+  "type": "Feature",
+  "geometry": {
+    "type": "Point",
+    "coordinates": [-93.6, 41.9, 310.22]
+  },
+  "properties": {
+    "parameter": {
+      "ALLSKY_SFC_SW_DWN_00": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.0,
+        "APR": 0.0,
+        "MAY": 0.0,
+        "JUN": 0.0,
+        "JUL": 0.0,
+        "AUG": 0.0,
+        "SEP": 0.0,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 0.0
+      },
+      "ALLSKY_SFC_SW_DWN_00_MAX": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.0,
+        "APR": 0.0,
+        "MAY": 0.0,
+        "JUN": 0.0,
+        "JUL": 0.0,
+        "AUG": 0.0,
+        "SEP": 0.0,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 0.0
+      },
+      "ALLSKY_SFC_SW_DWN_00_MIN": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.0,
+        "APR": 0.0,
+        "MAY": 0.0,
+        "JUN": 0.0,
+        "JUL": 0.0,
+        "AUG": 0.0,
+        "SEP": 0.0,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 0.0
+      },
+      "ALLSKY_SFC_SW_DWN_01": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.0,
+        "APR": 0.0,
+        "MAY": 0.0,
+        "JUN": 0.0,
+        "JUL": 0.0,
+        "AUG": 0.0,
+        "SEP": 0.0,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 0.0
+      },
+      "ALLSKY_SFC_SW_DWN_01_MAX": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.0,
+        "APR": 0.0,
+        "MAY": 0.0,
+        "JUN": 0.0,
+        "JUL": 0.0,
+        "AUG": 0.0,
+        "SEP": 0.0,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 0.0
+      },
+      "ALLSKY_SFC_SW_DWN_01_MIN": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.0,
+        "APR": 0.0,
+        "MAY": 0.0,
+        "JUN": 0.0,
+        "JUL": 0.0,
+        "AUG": 0.0,
+        "SEP": 0.0,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 0.0
+      },
+      "ALLSKY_SFC_SW_DWN_02": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.0,
+        "APR": 0.0,
+        "MAY": 0.0,
+        "JUN": 0.0,
+        "JUL": 0.0,
+        "AUG": 0.0,
+        "SEP": 0.0,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 0.0
+      },
+      "ALLSKY_SFC_SW_DWN_02_MAX": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.0,
+        "APR": 0.0,
+        "MAY": 0.0,
+        "JUN": 0.0,
+        "JUL": 0.0,
+        "AUG": 0.0,
+        "SEP": 0.0,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 0.0
+      },
+      "ALLSKY_SFC_SW_DWN_02_MIN": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.0,
+        "APR": 0.0,
+        "MAY": 0.0,
+        "JUN": 0.0,
+        "JUL": 0.0,
+        "AUG": 0.0,
+        "SEP": 0.0,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 0.0
+      },
+      "ALLSKY_SFC_SW_DWN_03": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.0,
+        "APR": 0.0,
+        "MAY": 0.0,
+        "JUN": 0.0,
+        "JUL": 0.0,
+        "AUG": 0.0,
+        "SEP": 0.0,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 0.0
+      },
+      "ALLSKY_SFC_SW_DWN_03_MAX": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.0,
+        "APR": 0.0,
+        "MAY": 0.0,
+        "JUN": 0.0,
+        "JUL": 0.0,
+        "AUG": 0.0,
+        "SEP": 0.0,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 0.0
+      },
+      "ALLSKY_SFC_SW_DWN_03_MIN": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.0,
+        "APR": 0.0,
+        "MAY": 0.0,
+        "JUN": 0.0,
+        "JUL": 0.0,
+        "AUG": 0.0,
+        "SEP": 0.0,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 0.0
+      },
+      "ALLSKY_SFC_SW_DWN_04": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.0,
+        "APR": 0.0,
+        "MAY": 0.0,
+        "JUN": 0.0,
+        "JUL": 0.0,
+        "AUG": 0.0,
+        "SEP": 0.0,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 0.0
+      },
+      "ALLSKY_SFC_SW_DWN_04_MAX": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.0,
+        "APR": 0.0,
+        "MAY": 0.0,
+        "JUN": 0.0,
+        "JUL": 0.0,
+        "AUG": 0.0,
+        "SEP": 0.0,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 0.0
+      },
+      "ALLSKY_SFC_SW_DWN_04_MIN": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.0,
+        "APR": 0.0,
+        "MAY": 0.0,
+        "JUN": 0.0,
+        "JUL": 0.0,
+        "AUG": 0.0,
+        "SEP": 0.0,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 0.0
+      },
+      "ALLSKY_SFC_SW_DWN_05": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.0,
+        "APR": 0.4,
+        "MAY": 2.97,
+        "JUN": 4.74,
+        "JUL": 2.97,
+        "AUG": 0.68,
+        "SEP": 0.0,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 0.98
+      },
+      "ALLSKY_SFC_SW_DWN_05_MAX": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.0,
+        "APR": 0.5,
+        "MAY": 3.41,
+        "JUN": 5.9,
+        "JUL": 3.38,
+        "AUG": 0.77,
+        "SEP": 0.0,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 1.09
+      },
+      "ALLSKY_SFC_SW_DWN_05_MIN": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.0,
+        "APR": 0.3,
+        "MAY": 2.52,
+        "JUN": 3.7,
+        "JUL": 2.51,
+        "AUG": 0.58,
+        "SEP": 0.0,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 0.88
+      },
+      "ALLSKY_SFC_SW_DWN_06": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.96,
+        "APR": 6.81,
+        "MAY": 12.54,
+        "JUN": 14.42,
+        "JUL": 13.01,
+        "AUG": 8.29,
+        "SEP": 3.97,
+        "OCT": 0.67,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 5.08
+      },
+      "ALLSKY_SFC_SW_DWN_06_MAX": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 1.13,
+        "APR": 7.87,
+        "MAY": 14.24,
+        "JUN": 17.97,
+        "JUL": 14.6,
+        "AUG": 9.65,
+        "SEP": 4.65,
+        "OCT": 0.88,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 5.53
+      },
+      "ALLSKY_SFC_SW_DWN_06_MIN": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.67,
+        "APR": 5.72,
+        "MAY": 10.47,
+        "JUN": 11.27,
+        "JUL": 11.04,
+        "AUG": 6.98,
+        "SEP": 3.32,
+        "OCT": 0.48,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 4.72
+      },
+      "ALLSKY_SFC_SW_DWN_07": {
+        "JAN": 0.15,
+        "FEB": 2.37,
+        "MAR": 9.21,
+        "APR": 17.81,
+        "MAY": 23.91,
+        "JUN": 26.22,
+        "JUL": 25.19,
+        "AUG": 19.99,
+        "SEP": 15.51,
+        "OCT": 8.61,
+        "NOV": 2.69,
+        "DEC": 0.27,
+        "ANN": 12.71
+      },
+      "ALLSKY_SFC_SW_DWN_07_MAX": {
+        "JAN": 0.17,
+        "FEB": 2.81,
+        "MAR": 11.33,
+        "APR": 20.22,
+        "MAY": 27.16,
+        "JUN": 32.42,
+        "JUL": 28.11,
+        "AUG": 23.55,
+        "SEP": 18.19,
+        "OCT": 10.71,
+        "NOV": 3.18,
+        "DEC": 0.33,
+        "ANN": 13.62
+      },
+      "ALLSKY_SFC_SW_DWN_07_MIN": {
+        "JAN": 0.11,
+        "FEB": 2.04,
+        "MAR": 7.41,
+        "APR": 15.08,
+        "MAY": 19.66,
+        "JUN": 21.08,
+        "JUL": 21.65,
+        "AUG": 16.91,
+        "SEP": 13.24,
+        "OCT": 6.62,
+        "NOV": 2.22,
+        "DEC": 0.22,
+        "ANN": 12.03
+      },
+      "ALLSKY_SFC_SW_DWN_08": {
+        "JAN": 6.43,
+        "FEB": 12.48,
+        "MAR": 20.59,
+        "APR": 29.23,
+        "MAY": 35.16,
+        "JUN": 38.27,
+        "JUL": 37.73,
+        "AUG": 32.68,
+        "SEP": 28.21,
+        "OCT": 19.41,
+        "NOV": 11.87,
+        "DEC": 6.49,
+        "ANN": 23.25
+      },
+      "ALLSKY_SFC_SW_DWN_08_MAX": {
+        "JAN": 7.31,
+        "FEB": 14.52,
+        "MAR": 25.76,
+        "APR": 33.4,
+        "MAY": 40.5,
+        "JUN": 47.15,
+        "JUL": 41.83,
+        "AUG": 38.45,
+        "SEP": 32.73,
+        "OCT": 23.97,
+        "NOV": 13.38,
+        "DEC": 7.33,
+        "ANN": 24.8
+      },
+      "ALLSKY_SFC_SW_DWN_08_MIN": {
+        "JAN": 4.71,
+        "FEB": 11.11,
+        "MAR": 17.06,
+        "APR": 25.24,
+        "MAY": 29.18,
+        "JUN": 31.32,
+        "JUL": 32.24,
+        "AUG": 27.31,
+        "SEP": 24.38,
+        "OCT": 15.27,
+        "NOV": 10.44,
+        "DEC": 5.33,
+        "ANN": 22.16
+      },
+      "ALLSKY_SFC_SW_DWN_09": {
+        "JAN": 15.43,
+        "FEB": 24.03,
+        "MAR": 31.6,
+        "APR": 40.34,
+        "MAY": 45.95,
+        "JUN": 49.33,
+        "JUL": 49.96,
+        "AUG": 45.01,
+        "SEP": 39.79,
+        "OCT": 29.41,
+        "NOV": 20.92,
+        "DEC": 14.76,
+        "ANN": 33.91
+      },
+      "ALLSKY_SFC_SW_DWN_09_MAX": {
+        "JAN": 17.26,
+        "FEB": 27.28,
+        "MAR": 38.36,
+        "APR": 44.91,
+        "MAY": 53.85,
+        "JUN": 58.41,
+        "JUL": 55.6,
+        "AUG": 50.46,
+        "SEP": 46.05,
+        "OCT": 36.14,
+        "NOV": 23.41,
+        "DEC": 16.87,
+        "ANN": 36.17
+      },
+      "ALLSKY_SFC_SW_DWN_09_MIN": {
+        "JAN": 11.09,
+        "FEB": 21.55,
+        "MAR": 25.68,
+        "APR": 34.57,
+        "MAY": 38.13,
+        "JUN": 41.95,
+        "JUL": 43.87,
+        "AUG": 38.93,
+        "SEP": 34.17,
+        "OCT": 23.71,
+        "NOV": 18.32,
+        "DEC": 12.22,
+        "ANN": 32.29
+      },
+      "ALLSKY_SFC_SW_DWN_10": {
+        "JAN": 23.18,
+        "FEB": 33.23,
+        "MAR": 40.03,
+        "APR": 48.86,
+        "MAY": 54.13,
+        "JUN": 58.27,
+        "JUL": 58.96,
+        "AUG": 54.02,
+        "SEP": 48.86,
+        "OCT": 36.67,
+        "NOV": 27.85,
+        "DEC": 21.39,
+        "ANN": 42.15
+      },
+      "ALLSKY_SFC_SW_DWN_10_MAX": {
+        "JAN": 26.04,
+        "FEB": 36.95,
+        "MAR": 49.54,
+        "APR": 55.3,
+        "MAY": 63.44,
+        "JUN": 69.6,
+        "JUL": 65.82,
+        "AUG": 58.09,
+        "SEP": 55.98,
+        "OCT": 45.35,
+        "NOV": 30.98,
+        "DEC": 24.98,
+        "ANN": 45.06
+      },
+      "ALLSKY_SFC_SW_DWN_10_MIN": {
+        "JAN": 16.56,
+        "FEB": 29.96,
+        "MAR": 32.95,
+        "APR": 43.14,
+        "MAY": 45.38,
+        "JUN": 50.24,
+        "JUL": 51.77,
+        "AUG": 46.76,
+        "SEP": 43.0,
+        "OCT": 28.8,
+        "NOV": 24.42,
+        "DEC": 17.34,
+        "ANN": 40.4
+      },
+      "ALLSKY_SFC_SW_DWN_11": {
+        "JAN": 28.1,
+        "FEB": 39.02,
+        "MAR": 45.75,
+        "APR": 53.4,
+        "MAY": 58.81,
+        "JUN": 63.12,
+        "JUL": 64.27,
+        "AUG": 59.45,
+        "SEP": 53.66,
+        "OCT": 40.4,
+        "NOV": 31.4,
+        "DEC": 25.46,
+        "ANN": 46.93
+      },
+      "ALLSKY_SFC_SW_DWN_11_MAX": {
+        "JAN": 31.47,
+        "FEB": 44.05,
+        "MAR": 55.41,
+        "APR": 60.78,
+        "MAY": 70.21,
+        "JUN": 76.19,
+        "JUL": 71.81,
+        "AUG": 64.01,
+        "SEP": 61.19,
+        "OCT": 49.5,
+        "NOV": 34.79,
+        "DEC": 29.33,
+        "ANN": 50.4
+      },
+      "ALLSKY_SFC_SW_DWN_11_MIN": {
+        "JAN": 19.9,
+        "FEB": 34.95,
+        "MAR": 38.69,
+        "APR": 46.94,
+        "MAY": 48.79,
+        "JUN": 53.84,
+        "JUL": 57.55,
+        "AUG": 50.96,
+        "SEP": 45.67,
+        "OCT": 32.28,
+        "NOV": 27.12,
+        "DEC": 21.14,
+        "ANN": 44.97
+      },
+      "ALLSKY_SFC_SW_DWN_12": {
+        "JAN": 29.5,
+        "FEB": 40.65,
+        "MAR": 47.29,
+        "APR": 54.79,
+        "MAY": 59.4,
+        "JUN": 64.05,
+        "JUL": 65.57,
+        "AUG": 60.81,
+        "SEP": 54.3,
+        "OCT": 40.81,
+        "NOV": 31.39,
+        "DEC": 25.84,
+        "ANN": 47.89
+      },
+      "ALLSKY_SFC_SW_DWN_12_MAX": {
+        "JAN": 32.95,
+        "FEB": 46.78,
+        "MAR": 56.88,
+        "APR": 61.69,
+        "MAY": 69.59,
+        "JUN": 77.1,
+        "JUL": 73.27,
+        "AUG": 65.89,
+        "SEP": 62.5,
+        "OCT": 50.67,
+        "NOV": 34.88,
+        "DEC": 30.03,
+        "ANN": 51.3
+      },
+      "ALLSKY_SFC_SW_DWN_12_MIN": {
+        "JAN": 21.98,
+        "FEB": 35.75,
+        "MAR": 41.0,
+        "APR": 47.87,
+        "MAY": 49.15,
+        "JUN": 54.47,
+        "JUL": 58.26,
+        "AUG": 52.92,
+        "SEP": 48.09,
+        "OCT": 31.23,
+        "NOV": 27.07,
+        "DEC": 21.28,
+        "ANN": 45.91
+      },
+      "ALLSKY_SFC_SW_DWN_13": {
+        "JAN": 27.39,
+        "FEB": 38.35,
+        "MAR": 44.54,
+        "APR": 51.0,
+        "MAY": 55.81,
+        "JUN": 60.87,
+        "JUL": 63.14,
+        "AUG": 57.78,
+        "SEP": 50.0,
+        "OCT": 36.42,
+        "NOV": 27.33,
+        "DEC": 22.7,
+        "ANN": 44.63
+      },
+      "ALLSKY_SFC_SW_DWN_13_MAX": {
+        "JAN": 30.59,
+        "FEB": 44.07,
+        "MAR": 54.51,
+        "APR": 58.15,
+        "MAY": 65.11,
+        "JUN": 72.9,
+        "JUL": 69.92,
+        "AUG": 63.52,
+        "SEP": 58.86,
+        "OCT": 45.93,
+        "NOV": 30.45,
+        "DEC": 26.92,
+        "ANN": 48.13
+      },
+      "ALLSKY_SFC_SW_DWN_13_MIN": {
+        "JAN": 19.79,
+        "FEB": 33.42,
+        "MAR": 37.43,
+        "APR": 44.23,
+        "MAY": 47.5,
+        "JUN": 51.03,
+        "JUL": 56.56,
+        "AUG": 50.51,
+        "SEP": 42.97,
+        "OCT": 26.6,
+        "NOV": 23.66,
+        "DEC": 18.91,
+        "ANN": 42.74
+      },
+      "ALLSKY_SFC_SW_DWN_14": {
+        "JAN": 21.85,
+        "FEB": 32.25,
+        "MAR": 37.81,
+        "APR": 43.96,
+        "MAY": 49.09,
+        "JUN": 54.3,
+        "JUL": 56.56,
+        "AUG": 50.99,
+        "SEP": 42.22,
+        "OCT": 29.11,
+        "NOV": 20.22,
+        "DEC": 16.88,
+        "ANN": 37.96
+      },
+      "ALLSKY_SFC_SW_DWN_14_MAX": {
+        "JAN": 24.1,
+        "FEB": 37.1,
+        "MAR": 47.06,
+        "APR": 50.2,
+        "MAY": 56.0,
+        "JUN": 63.39,
+        "JUL": 63.71,
+        "AUG": 56.51,
+        "SEP": 49.97,
+        "OCT": 36.43,
+        "NOV": 22.68,
+        "DEC": 19.91,
+        "ANN": 40.76
+      },
+      "ALLSKY_SFC_SW_DWN_14_MIN": {
+        "JAN": 16.18,
+        "FEB": 27.25,
+        "MAR": 30.58,
+        "APR": 37.77,
+        "MAY": 41.49,
+        "JUN": 47.13,
+        "JUL": 51.09,
+        "AUG": 44.28,
+        "SEP": 36.64,
+        "OCT": 22.08,
+        "NOV": 17.34,
+        "DEC": 13.65,
+        "ANN": 36.13
+      },
+      "ALLSKY_SFC_SW_DWN_15": {
+        "JAN": 13.52,
+        "FEB": 22.86,
+        "MAR": 28.45,
+        "APR": 34.03,
+        "MAY": 39.16,
+        "JUN": 44.91,
+        "JUL": 47.08,
+        "AUG": 40.53,
+        "SEP": 31.45,
+        "OCT": 19.43,
+        "NOV": 11.39,
+        "DEC": 8.87,
+        "ANN": 28.49
+      },
+      "ALLSKY_SFC_SW_DWN_15_MAX": {
+        "JAN": 14.71,
+        "FEB": 26.06,
+        "MAR": 34.89,
+        "APR": 39.82,
+        "MAY": 44.82,
+        "JUN": 52.78,
+        "JUL": 53.33,
+        "AUG": 45.2,
+        "SEP": 37.5,
+        "OCT": 24.34,
+        "NOV": 12.67,
+        "DEC": 10.53,
+        "ANN": 30.39
+      },
+      "ALLSKY_SFC_SW_DWN_15_MIN": {
+        "JAN": 10.3,
+        "FEB": 19.22,
+        "MAR": 23.2,
+        "APR": 27.68,
+        "MAY": 32.04,
+        "JUN": 38.34,
+        "JUL": 42.63,
+        "AUG": 35.39,
+        "SEP": 26.67,
+        "OCT": 14.49,
+        "NOV": 9.99,
+        "DEC": 7.05,
+        "ANN": 27.24
+      },
+      "ALLSKY_SFC_SW_DWN_16": {
+        "JAN": 4.38,
+        "FEB": 11.51,
+        "MAR": 17.29,
+        "APR": 22.91,
+        "MAY": 28.11,
+        "JUN": 33.3,
+        "JUL": 34.81,
+        "AUG": 28.4,
+        "SEP": 19.03,
+        "OCT": 8.58,
+        "NOV": 2.3,
+        "DEC": 1.34,
+        "ANN": 17.69
+      },
+      "ALLSKY_SFC_SW_DWN_16_MAX": {
+        "JAN": 4.92,
+        "FEB": 13.12,
+        "MAR": 21.62,
+        "APR": 27.15,
+        "MAY": 32.57,
+        "JUN": 39.19,
+        "JUL": 39.19,
+        "AUG": 31.88,
+        "SEP": 22.74,
+        "OCT": 10.77,
+        "NOV": 2.56,
+        "DEC": 1.52,
+        "ANN": 19.03
+      },
+      "ALLSKY_SFC_SW_DWN_16_MIN": {
+        "JAN": 3.32,
+        "FEB": 9.89,
+        "MAR": 14.48,
+        "APR": 18.85,
+        "MAY": 22.26,
+        "JUN": 28.9,
+        "JUL": 31.47,
+        "AUG": 25.28,
+        "SEP": 15.9,
+        "OCT": 6.2,
+        "NOV": 1.9,
+        "DEC": 1.13,
+        "ANN": 16.91
+      },
+      "ALLSKY_SFC_SW_DWN_17": {
+        "JAN": 0.04,
+        "FEB": 1.84,
+        "MAR": 6.32,
+        "APR": 11.78,
+        "MAY": 16.59,
+        "JUN": 20.88,
+        "JUL": 21.56,
+        "AUG": 15.64,
+        "SEP": 7.0,
+        "OCT": 0.77,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 8.57
+      },
+      "ALLSKY_SFC_SW_DWN_17_MAX": {
+        "JAN": 0.05,
+        "FEB": 2.15,
+        "MAR": 7.97,
+        "APR": 13.81,
+        "MAY": 19.47,
+        "JUN": 24.58,
+        "JUL": 24.1,
+        "AUG": 17.35,
+        "SEP": 8.29,
+        "OCT": 0.98,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 9.27
+      },
+      "ALLSKY_SFC_SW_DWN_17_MIN": {
+        "JAN": 0.02,
+        "FEB": 1.51,
+        "MAR": 5.04,
+        "APR": 9.71,
+        "MAY": 13.39,
+        "JUN": 17.77,
+        "JUL": 19.66,
+        "AUG": 14.09,
+        "SEP": 5.57,
+        "OCT": 0.55,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 8.06
+      },
+      "ALLSKY_SFC_SW_DWN_18": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.23,
+        "APR": 2.2,
+        "MAY": 6.21,
+        "JUN": 9.65,
+        "JUL": 9.56,
+        "AUG": 4.52,
+        "SEP": 0.38,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 2.75
+      },
+      "ALLSKY_SFC_SW_DWN_18_MAX": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.27,
+        "APR": 2.52,
+        "MAY": 7.48,
+        "JUN": 11.35,
+        "JUL": 10.65,
+        "AUG": 4.99,
+        "SEP": 0.49,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 2.98
+      },
+      "ALLSKY_SFC_SW_DWN_18_MIN": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.16,
+        "APR": 1.88,
+        "MAY": 5.07,
+        "JUN": 8.18,
+        "JUL": 8.72,
+        "AUG": 3.94,
+        "SEP": 0.26,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 2.54
+      },
+      "ALLSKY_SFC_SW_DWN_19": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.0,
+        "APR": 0.0,
+        "MAY": 0.29,
+        "JUN": 1.28,
+        "JUL": 1.09,
+        "AUG": 0.07,
+        "SEP": 0.0,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 0.23
+      },
+      "ALLSKY_SFC_SW_DWN_19_MAX": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.0,
+        "APR": 0.0,
+        "MAY": 0.34,
+        "JUN": 1.5,
+        "JUL": 1.21,
+        "AUG": 0.08,
+        "SEP": 0.0,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 0.25
+      },
+      "ALLSKY_SFC_SW_DWN_19_MIN": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.0,
+        "APR": 0.0,
+        "MAY": 0.23,
+        "JUN": 1.1,
+        "JUL": 0.99,
+        "AUG": 0.06,
+        "SEP": 0.0,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 0.21
+      },
+      "ALLSKY_SFC_SW_DWN_20": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.0,
+        "APR": 0.0,
+        "MAY": 0.0,
+        "JUN": 0.0,
+        "JUL": 0.0,
+        "AUG": 0.0,
+        "SEP": 0.0,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 0.0
+      },
+      "ALLSKY_SFC_SW_DWN_20_MAX": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.0,
+        "APR": 0.0,
+        "MAY": 0.0,
+        "JUN": 0.0,
+        "JUL": 0.0,
+        "AUG": 0.0,
+        "SEP": 0.0,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 0.0
+      },
+      "ALLSKY_SFC_SW_DWN_20_MIN": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.0,
+        "APR": 0.0,
+        "MAY": 0.0,
+        "JUN": 0.0,
+        "JUL": 0.0,
+        "AUG": 0.0,
+        "SEP": 0.0,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 0.0
+      },
+      "ALLSKY_SFC_SW_DWN_21": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.0,
+        "APR": 0.0,
+        "MAY": 0.0,
+        "JUN": 0.0,
+        "JUL": 0.0,
+        "AUG": 0.0,
+        "SEP": 0.0,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 0.0
+      },
+      "ALLSKY_SFC_SW_DWN_21_MAX": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.0,
+        "APR": 0.0,
+        "MAY": 0.0,
+        "JUN": 0.0,
+        "JUL": 0.0,
+        "AUG": 0.0,
+        "SEP": 0.0,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 0.0
+      },
+      "ALLSKY_SFC_SW_DWN_21_MIN": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.0,
+        "APR": 0.0,
+        "MAY": 0.0,
+        "JUN": 0.0,
+        "JUL": 0.0,
+        "AUG": 0.0,
+        "SEP": 0.0,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 0.0
+      },
+      "ALLSKY_SFC_SW_DWN_22": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.0,
+        "APR": 0.0,
+        "MAY": 0.0,
+        "JUN": 0.0,
+        "JUL": 0.0,
+        "AUG": 0.0,
+        "SEP": 0.0,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 0.0
+      },
+      "ALLSKY_SFC_SW_DWN_22_MAX": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.0,
+        "APR": 0.0,
+        "MAY": 0.0,
+        "JUN": 0.0,
+        "JUL": 0.0,
+        "AUG": 0.0,
+        "SEP": 0.0,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 0.0
+      },
+      "ALLSKY_SFC_SW_DWN_22_MIN": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.0,
+        "APR": 0.0,
+        "MAY": 0.0,
+        "JUN": 0.0,
+        "JUL": 0.0,
+        "AUG": 0.0,
+        "SEP": 0.0,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 0.0
+      },
+      "ALLSKY_SFC_SW_DWN_23": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.0,
+        "APR": 0.0,
+        "MAY": 0.0,
+        "JUN": 0.0,
+        "JUL": 0.0,
+        "AUG": 0.0,
+        "SEP": 0.0,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 0.0
+      },
+      "ALLSKY_SFC_SW_DWN_23_MAX": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.0,
+        "APR": 0.0,
+        "MAY": 0.0,
+        "JUN": 0.0,
+        "JUL": 0.0,
+        "AUG": 0.0,
+        "SEP": 0.0,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 0.0
+      },
+      "ALLSKY_SFC_SW_DWN_23_MIN": {
+        "JAN": 0.0,
+        "FEB": 0.0,
+        "MAR": 0.0,
+        "APR": 0.0,
+        "MAY": 0.0,
+        "JUN": 0.0,
+        "JUL": 0.0,
+        "AUG": 0.0,
+        "SEP": 0.0,
+        "OCT": 0.0,
+        "NOV": 0.0,
+        "DEC": 0.0,
+        "ANN": 0.0
+      },
+      "SI_TRACKER_AVG_DUAL": {
+        "JAN": 14.05,
+        "FEB": 18.72,
+        "MAR": 19.83,
+        "APR": 23.0,
+        "MAY": 25.16,
+        "JUN": 27.65,
+        "JUL": 28.54,
+        "AUG": 25.62,
+        "SEP": 24.04,
+        "OCT": 18.96,
+        "NOV": 15.46,
+        "DEC": 12.81,
+        "ANN": 21.15
+      },
+      "SI_TRACKER_AVG_HSATEW": {
+        "JAN": 12.45,
+        "FEB": 15.96,
+        "MAR": 16.36,
+        "APR": 18.63,
+        "MAY": 20.93,
+        "JUN": 23.19,
+        "JUL": 23.56,
+        "AUG": 20.9,
+        "SEP": 19.18,
+        "OCT": 15.68,
+        "NOV": 13.43,
+        "DEC": 11.44,
+        "ANN": 17.64
+      },
+      "SI_TRACKER_AVG_HSATNS": {
+        "JAN": 9.95,
+        "FEB": 14.87,
+        "MAR": 17.75,
+        "APR": 21.91,
+        "MAY": 24.61,
+        "JUN": 27.17,
+        "JUL": 27.96,
+        "AUG": 24.63,
+        "SEP": 21.78,
+        "OCT": 15.55,
+        "NOV": 11.09,
+        "DEC": 8.58,
+        "ANN": 18.82
+      },
+      "SI_TRACKER_AVG_PSAT": {
+        "JAN": 13.48,
+        "FEB": 18.43,
+        "MAR": 19.85,
+        "APR": 22.52,
+        "MAY": 23.74,
+        "JUN": 25.53,
+        "JUL": 26.7,
+        "AUG": 24.83,
+        "SEP": 23.98,
+        "OCT": 18.89,
+        "NOV": 15.0,
+        "DEC": 12.16,
+        "ANN": 20.43
+      },
+      "SI_TRACKER_AVG_VSAT": {
+        "JAN": 13.13,
+        "FEB": 17.05,
+        "MAR": 16.42,
+        "APR": 17.22,
+        "MAY": 17.59,
+        "JUN": 18.77,
+        "JUL": 19.77,
+        "AUG": 18.73,
+        "SEP": 19.14,
+        "OCT": 16.37,
+        "NOV": 14.1,
+        "DEC": 12.01,
+        "ANN": 16.69
+      }
+    }
+  },
+  "header": {
+    "title": "NASA/POWER Source Native Resolution Climatology Climatologies",
+    "api": {
+      "version": "v2.10.1",
+      "name": "POWER Climatology API"
+    },
+    "sources": ["SYN1DEG", "POWER"],
+    "fill_value": -999.0,
+    "time_standard": "LST",
+    "range": "25-year Meteorological and Solar Monthly & Annual Climatologies (January 2001 - December 2025)"
+  },
+  "messages": [
+    "The requested parameters are retrieved from a pre-computed climatological period (January 2001 - December 2025)"
+  ],
+  "parameters": {
+    "ALLSKY_SFC_SW_DWN_00": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 00 Hour"
+    },
+    "ALLSKY_SFC_SW_DWN_00_MAX": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 00 UTC Maximum"
+    },
+    "ALLSKY_SFC_SW_DWN_00_MIN": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 00 UTC Minimum"
+    },
+    "ALLSKY_SFC_SW_DWN_01": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 01 Hour"
+    },
+    "ALLSKY_SFC_SW_DWN_01_MAX": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 01 UTC Maximum"
+    },
+    "ALLSKY_SFC_SW_DWN_01_MIN": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 01 UTC Minimum"
+    },
+    "ALLSKY_SFC_SW_DWN_02": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 02 Hour"
+    },
+    "ALLSKY_SFC_SW_DWN_02_MAX": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 02 UTC Maximum"
+    },
+    "ALLSKY_SFC_SW_DWN_02_MIN": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 02 UTC Minimum"
+    },
+    "ALLSKY_SFC_SW_DWN_03": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 03 Hour"
+    },
+    "ALLSKY_SFC_SW_DWN_03_MAX": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 03 UTC Maximum"
+    },
+    "ALLSKY_SFC_SW_DWN_03_MIN": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 03 UTC Minimum"
+    },
+    "ALLSKY_SFC_SW_DWN_04": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 04 Hour"
+    },
+    "ALLSKY_SFC_SW_DWN_04_MAX": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 04 UTC Maximum"
+    },
+    "ALLSKY_SFC_SW_DWN_04_MIN": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 04 UTC Minimum"
+    },
+    "ALLSKY_SFC_SW_DWN_05": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 05 Hour"
+    },
+    "ALLSKY_SFC_SW_DWN_05_MAX": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 05 UTC Maximum"
+    },
+    "ALLSKY_SFC_SW_DWN_05_MIN": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 05 UTC Minimum"
+    },
+    "ALLSKY_SFC_SW_DWN_06": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 06 Hour"
+    },
+    "ALLSKY_SFC_SW_DWN_06_MAX": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 06 UTC Maximum"
+    },
+    "ALLSKY_SFC_SW_DWN_06_MIN": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 06 UTC Minimum"
+    },
+    "ALLSKY_SFC_SW_DWN_07": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 07 Hour"
+    },
+    "ALLSKY_SFC_SW_DWN_07_MAX": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 07 UTC Maximum"
+    },
+    "ALLSKY_SFC_SW_DWN_07_MIN": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 07 UTC Minimum"
+    },
+    "ALLSKY_SFC_SW_DWN_08": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 08 Hour"
+    },
+    "ALLSKY_SFC_SW_DWN_08_MAX": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 08 UTC Maximum"
+    },
+    "ALLSKY_SFC_SW_DWN_08_MIN": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 08 UTC Minimum"
+    },
+    "ALLSKY_SFC_SW_DWN_09": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 09 Hour"
+    },
+    "ALLSKY_SFC_SW_DWN_09_MAX": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 09 UTC Maximum"
+    },
+    "ALLSKY_SFC_SW_DWN_09_MIN": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 09 UTC Minimum"
+    },
+    "ALLSKY_SFC_SW_DWN_10": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 10 Hour"
+    },
+    "ALLSKY_SFC_SW_DWN_10_MAX": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 10 UTC Maximum"
+    },
+    "ALLSKY_SFC_SW_DWN_10_MIN": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 10 UTC Minimum"
+    },
+    "ALLSKY_SFC_SW_DWN_11": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 11 Hour"
+    },
+    "ALLSKY_SFC_SW_DWN_11_MAX": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 11 UTC Maximum"
+    },
+    "ALLSKY_SFC_SW_DWN_11_MIN": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 11 UTC Minimum"
+    },
+    "ALLSKY_SFC_SW_DWN_12": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 12 Hour"
+    },
+    "ALLSKY_SFC_SW_DWN_12_MAX": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 12 UTC Maximum"
+    },
+    "ALLSKY_SFC_SW_DWN_12_MIN": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 12 UTC Minimum"
+    },
+    "ALLSKY_SFC_SW_DWN_13": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 13 Hour"
+    },
+    "ALLSKY_SFC_SW_DWN_13_MAX": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 13 UTC Maximum"
+    },
+    "ALLSKY_SFC_SW_DWN_13_MIN": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 13 UTC Minimum"
+    },
+    "ALLSKY_SFC_SW_DWN_14": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 14 Hour"
+    },
+    "ALLSKY_SFC_SW_DWN_14_MAX": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 14 UTC Maximum"
+    },
+    "ALLSKY_SFC_SW_DWN_14_MIN": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 14 UTC Minimum"
+    },
+    "ALLSKY_SFC_SW_DWN_15": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 15 Hour"
+    },
+    "ALLSKY_SFC_SW_DWN_15_MAX": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 15 UTC Maximum"
+    },
+    "ALLSKY_SFC_SW_DWN_15_MIN": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 15 UTC Minimum"
+    },
+    "ALLSKY_SFC_SW_DWN_16": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 16 Hour"
+    },
+    "ALLSKY_SFC_SW_DWN_16_MAX": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 16 UTC Maximum"
+    },
+    "ALLSKY_SFC_SW_DWN_16_MIN": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 16 UTC Minimum"
+    },
+    "ALLSKY_SFC_SW_DWN_17": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 17 Hour"
+    },
+    "ALLSKY_SFC_SW_DWN_17_MAX": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 17 UTC Maximum"
+    },
+    "ALLSKY_SFC_SW_DWN_17_MIN": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 17 UTC Minimum"
+    },
+    "ALLSKY_SFC_SW_DWN_18": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 18 Hour"
+    },
+    "ALLSKY_SFC_SW_DWN_18_MAX": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 18 UTC Maximum"
+    },
+    "ALLSKY_SFC_SW_DWN_18_MIN": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 18 UTC Minimum"
+    },
+    "ALLSKY_SFC_SW_DWN_19": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 19 Hour"
+    },
+    "ALLSKY_SFC_SW_DWN_19_MAX": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 19 UTC Maximum"
+    },
+    "ALLSKY_SFC_SW_DWN_19_MIN": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 19 UTC Minimum"
+    },
+    "ALLSKY_SFC_SW_DWN_20": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 20 Hour"
+    },
+    "ALLSKY_SFC_SW_DWN_20_MAX": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 20 UTC Maximum"
+    },
+    "ALLSKY_SFC_SW_DWN_20_MIN": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 20 UTC Minimum"
+    },
+    "ALLSKY_SFC_SW_DWN_21": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 21 Hour"
+    },
+    "ALLSKY_SFC_SW_DWN_21_MAX": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 21 UTC Maximum"
+    },
+    "ALLSKY_SFC_SW_DWN_21_MIN": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 21 UTC Minimum"
+    },
+    "ALLSKY_SFC_SW_DWN_22": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 22 Hour"
+    },
+    "ALLSKY_SFC_SW_DWN_22_MAX": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 22 UTC Maximum"
+    },
+    "ALLSKY_SFC_SW_DWN_22_MIN": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 22 UTC Minimum"
+    },
+    "ALLSKY_SFC_SW_DWN_23": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 23 Hour"
+    },
+    "ALLSKY_SFC_SW_DWN_23_MAX": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 23 UTC Maximum"
+    },
+    "ALLSKY_SFC_SW_DWN_23_MIN": {
+      "units": "MJ/m^2/day",
+      "longname": "All Sky Surface Shortwave Downward Irradiance at 23 UTC Minimum"
+    },
+    "SI_TRACKER_AVG_DUAL": {
+      "units": "MJ/m^2/day",
+      "longname": "Average Irradiance for Dual-Axis Tracker"
+    },
+    "SI_TRACKER_AVG_HSATEW": {
+      "units": "MJ/m^2/day",
+      "longname": "Average Solar Irradiance for Horizontal Single-Axis Tracker Aligned East-West"
+    },
+    "SI_TRACKER_AVG_HSATNS": {
+      "units": "MJ/m^2/day",
+      "longname": "Average Solar Irradiance for Horizontal Single-Axis Tracker Aligned North-South"
+    },
+    "SI_TRACKER_AVG_PSAT": {
+      "units": "MJ/m^2/day",
+      "longname": "Average Solar Irradiance for Single-Axis Polar Tracker"
+    },
+    "SI_TRACKER_AVG_VSAT": {
+      "units": "MJ/m^2/day",
+      "longname": "Average Irradiance for Vertical Single-Axis Tracker"
+    }
+  },
+  "times": {
+    "data": 4.539,
+    "process": 0.22
+  }
+}

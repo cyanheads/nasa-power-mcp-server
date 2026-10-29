@@ -2,7 +2,7 @@
 import { z } from '@cyanheads/mcp-ts-core';
 import { POWER_LIMITS } from '../../config/server-config.js';
 import { powerError, shapeError } from './errors.js';
-import { presetParameters, TILTED_ALIAS, TILTED_GROUP_ALIASES } from './presets.js';
+import { aliasMembership, presetParameters } from './presets.js';
 import { summarizeCells, summarizeRows } from './summarize.js';
 import {
   type AccessMetadata,
@@ -260,16 +260,9 @@ function omissions(
   const requested = requestedParameters(request);
   const expansions = Object.fromEntries(
     requested.flatMap((code) => {
-      const prefix =
-        code === TILTED_ALIAS
-          ? 'SI_TILTED_'
-          : TILTED_GROUP_ALIASES.some((alias) => alias === code)
-            ? `${code}_`
-            : undefined;
-      if (!prefix) return [];
-      const members = params
-        .filter((parameter) => parameter.code.startsWith(prefix))
-        .map((parameter) => parameter.code);
+      const isMember = aliasMembership(code);
+      if (!isMember) return [];
+      const members = [...codes].filter(isMember);
       return members.length ? [[code, members]] : [];
     }),
   );

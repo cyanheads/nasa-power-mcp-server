@@ -38,5 +38,27 @@ export const WIND_SURFACES = {
 } as const;
 /** Verified climatology alias; returned members remain dynamic. */
 export const TILTED_ALIAS = 'SI_EF_TILTED_SURFACE';
-/** Dictionary-advertised groups expand only within their returned member namespace. */
-export const TILTED_GROUP_ALIASES = ['SI_TILTED_AVG', 'SI_TILTED_MIN', 'SI_TILTED_MAX'] as const;
+/** Tilted and sun-tracker groups return `<group>_<mode>` members (`SI_TRACKER_AVG_DUAL`). */
+const MODE_GROUP = /^SI_(?:TILTED|TRACKER)_(?:AVG|MIN|MAX)$/;
+/** Hour groups: `<base>_HR` returns `<base>_00`…`_23`; `_HR_MAX`/`_HR_MIN` return `<base>_00_MAX`…. */
+const HOUR_GROUP_MEMBER = {
+  _HR: /^\d{2}$/,
+  _HR_MAX: /^\d{2}_MAX$/,
+  _HR_MIN: /^\d{2}_MIN$/,
+} as const;
+/**
+ * Membership test for a requested group alias, or undefined when the code is not one. POWER
+ * expands these aliases into member columns and never returns the alias itself. Families are
+ * recognized by naming taken from captured responses, so members POWER adds to a known family
+ * stay covered without a hand-listed code table.
+ */
+export function aliasMembership(code: string): ((returned: string) => boolean) | undefined {
+  if (code === TILTED_ALIAS) return (returned) => returned.startsWith('SI_TILTED_');
+  if (MODE_GROUP.test(code)) return (returned) => returned.startsWith(`${code}_`);
+  for (const [suffix, member] of Object.entries(HOUR_GROUP_MEMBER)) {
+    if (!code.endsWith(suffix)) continue;
+    const prefix = `${code.slice(0, -suffix.length)}_`;
+    return (returned) => returned.startsWith(prefix) && member.test(returned.slice(prefix.length));
+  }
+  return undefined;
+}
