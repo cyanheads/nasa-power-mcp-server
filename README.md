@@ -62,13 +62,15 @@ The skill ships in `skills/nasa-power-guide/SKILL.md`. Plugin hosts load it from
 - `latitude` / `longitude` and `temporalResolution`: `hourly` and `daily` take an inclusive `startDate` / `endDate`, `monthly` takes `startYear` / `endYear`. `selection` is a named `preset` (default `solar_pv`) or explicit `parameters`, at most 15 effective codes hourly and 20 otherwise, corrections included.
 - `community` (`RE`, `SB`, `AG`; default `RE`), `units` (`metric`, `imperial`) and `timeStandard` (`LST`, `UTC`). Optional `siteElevation` adds `PSC`; paired `windElevation` (10–300 meters) and `windSurface` add `WSC`. Use `nasa_power_list_reference` topic `wind_surfaces` for all 17 canonical NASA aliases, including `airportgrass`, `airportice` and `vegtype_1`; vegetation underscores are retained.
 - Returns `metadata`, `parameters`, `expansions`, `omittedParameters`, `summaries`, `rows`, an exact `rowCount` and `dataset` (null unless staged). Optional `canvas_id` reuses a canvas when staging is needed.
+- Codes NASA lists but does not serve at the requested resolution (`GDD*` at monthly and climatology, `*_HR_MAX` and `*_HR_MIN` at monthly) fail with `unsupported_parameter` before any data request, naming the codes and the resolution that serves them. This holds for every data tool.
 
 ---
 
 ### `nasa_power_get_climatology` <sub>tool</sub>
 
 - Point coordinates with the same selection and corrections; optional `startYear` and `endYear` together, otherwise the source product range. No `temporalResolution` input.
-- Small profiles remain inline; larger profiles return a bounded preview and complete `dataset` handle. Pass optional `canvas_id` to reuse an existing workspace. Without DuckDB, narrow oversized selections for inline output. `SI_EF_TILTED_SURFACE` and the distinct `SI_TILTED_AVG`, `SI_TILTED_MIN`, `SI_TILTED_MAX` groups list only their actually returned members, numeric angles and N/S orientation text included, in `expansions`. A group is omitted only when none of its members return.
+- Small profiles remain inline; larger profiles return a bounded preview and complete `dataset` handle. Pass optional `canvas_id` to reuse an existing workspace. Without DuckDB, an oversized result is refused with `canvas_required`, which lists calls that each fit inline.
+- Group codes list only their actually returned members in `expansions`, on every data tool: `SI_EF_TILTED_SURFACE` and the distinct `SI_TILTED_AVG`, `SI_TILTED_MIN`, `SI_TILTED_MAX` groups (numeric angles and N/S orientation text included), the `SI_TRACKER_AVG`, `SI_TRACKER_MIN`, `SI_TRACKER_MAX` groups, hour-of-day `*_HR` groups (members `*_00` … `*_23`, monthly and climatology) and `*_HR_MAX` / `*_HR_MIN` groups (members `*_00_MAX` … `*_23_MAX`, climatology). A group is omitted only when none of its members return.
 
 ---
 
@@ -94,13 +96,14 @@ The skill ships in `skills/nasa-power-guide/SKILL.md`. Plugin hosts load it from
 
 - `community` (default `RE`), `temporalResolution` (default `daily`), optional `filter` (up to 256 characters), `offset` and positive integer `limit` (default 20, effective cap 100 with a notice when capped).
 - Every case-insensitive `filter` token must match a code, name or definition across the complete dictionary before sorted pagination; a blank filter browses it. `entries`, `total`, `hasMore` and `truncated` describe the page.
+- Codes NASA lists but does not serve at the selected resolution are left out before counting and paging; a `notice` names any the filter matched, with the resolution to request instead.
 
 ---
 
 ### `nasa_power_list_reference` <sub>tool</sub>
 
 - `topic`: `presets` (default), `communities`, `coverage`, `missing_data`, `wind_surfaces` or `dataframes`.
-- Returns typed `entries`, `guidance`, `documentationUrls` and `verifiedOn`. Presets are `solar_pv`, `wind_turbine`, `building_hvac`, `agroclimatology` and `water_balance`; `building_hvac` is unavailable hourly. `agroclimatology` adds `T2M_MAX` and `T2M_MIN` outside hourly resolution; monthly/climatology extremes remain source aggregates, without reconstructed daily records or calculated growing degree days.
+- Returns typed `entries`, `guidance`, `documentationUrls` and `verifiedOn`. Presets are `solar_pv`, `wind_turbine`, `building_hvac`, `agroclimatology` and `water_balance`; `building_hvac` is unavailable hourly. `agroclimatology` adds `T2M_MAX` and `T2M_MIN` outside hourly resolution; monthly/climatology extremes remain source aggregates, without reconstructed daily records or calculated growing degree days. Growing degree days (`GDD*`) are served at daily resolution only.
 
 ---
 
@@ -139,7 +142,7 @@ Agent-friendly output:
 
 - Scientific provenance — source API version, dataset identifiers, endpoint and access time accompany results; preserve returned units and attribute NASA POWER.
 - Explicit gaps — `omittedParameters` distinguishes an absent series from fill values; arithmetic observation means and calendar-season buckets are not climate normals, annual yields or water balances.
-- Complete datasets — inline outputs each fit 40,000 characters. Larger datasets stage all rows with a preview of at most 20 rows and a `dataset` handle; unsupported or oversized requests fail with narrowing guidance instead of returning a capped source prefix.
+- Complete datasets — inline outputs each fit 40,000 characters. Larger datasets stage all rows with a preview of at most 20 rows and a `dataset` handle; unsupported requests fail with narrowing guidance, and oversized ones without DuckDB fail with `canvas_required` and a list of calls that each fit inline, instead of returning a capped source prefix.
 
 Staging requires DuckDB and supports at most 250,000 rows, 64 parameter columns and 32 MiB of serialized rows per dataset. Canvases are process-local capabilities: pass the returned token explicitly and route later calls to the same process. Tables expire after 30 minutes with eight tables per canvas. Defaults are one idle hour and six absolute hours per canvas, four canvases per tenant, eight per process, and 256 MiB engine memory per canvas. Operators can size canvas capacity, memory and lifetime below; engine memory does not bound total RSS or temporary disk.
 
@@ -170,7 +173,7 @@ For other clients, add this to the MCP config file:
 }
 ```
 
-npm and Docker installs stage large results in DuckDB for SQL by default; set `CANVAS_PROVIDER_TYPE=none` to keep every result inline. The Claude Desktop bundle is inline-only: narrow an oversized request, or use npm or Docker for analytics. No NASA account or API key is required. For Docker or a source build, see [Running the server](#running-the-server).
+npm and Docker installs stage large results in DuckDB for SQL by default; set `CANVAS_PROVIDER_TYPE=none` to keep every result inline. The Claude Desktop bundle is inline-only: send the calls an oversized request's `canvas_required` refusal lists, or use npm or Docker for analytics. No NASA account or API key is required. For Docker or a source build, see [Running the server](#running-the-server).
 
 ## Configuration
 

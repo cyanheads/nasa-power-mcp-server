@@ -1,10 +1,10 @@
 ---
 name: nasa-power-guide
-description: Plan nasa_power_* calls for NASA POWER solar, wind, temperature, precipitation, and degree-day history. Covers which tool answers a typical-month versus a dated question, one data call at a time, grid-cell size, data freshness, rate versus total units, degree days, and SQL over staged tables. Use before solar sizing, wind screening, site comparison, regional, or agroclimate work with these tools.
+description: Plan nasa_power_* calls for NASA POWER solar, wind, temperature, precipitation, and degree-day history. Covers which tool answers a typical-month versus a dated question, overlapping data calls, grid-cell size, data freshness, rate versus total units, degree days, and SQL over staged tables. Use before solar sizing, wind screening, site comparison, regional, or agroclimate work with these tools.
 license: Apache-2.0
 metadata:
   author: cyanheads
-  version: "1.0"
+  version: "1.0.1"
 ---
 
 ## Scope
@@ -29,17 +29,17 @@ Sites that fall in the same cell return identical values. The `returnedCoordinat
 
 ## Gates
 
-1. **One data call at a time.** `nasa_power_get_timeseries`, `nasa_power_get_climatology`, `nasa_power_get_region` and `nasa_power_compare_locations` share one admission budget. While one is running, another call is refused immediately with `canvas_capacity_exhausted`, however small it is. Its recovery text about canvases does not apply here: wait for the running call to return, then retry. For several sites, use one `nasa_power_compare_locations` call (up to 10 sites) instead of parallel point calls.
+1. **Overlapping data calls are admitted or wait briefly.** `nasa_power_get_timeseries`, `nasa_power_get_climatology`, `nasa_power_get_region` and `nasa_power_compare_locations` share a limited budget, and a small call runs alongside others. A call that doesn't fit waits for a running one to finish, within its own deadline. If it is still refused with `producer_capacity_exhausted`, other data calls are holding the capacity: retry after one returns. A `canvas_busy` refusal means a query or operation on that canvas is still running, or the server's query pool is full: retry when it returns. Neither refusal is about canvases to reuse. For several sites, one `nasa_power_compare_locations` call (up to 10 sites) beats parallel point calls.
 2. **Check freshness before you conclude.** The latest days of a window come back as nulls until NASA releases them, and solar can lag meteorology. Read `summaries[].lastValidDate` for each parameter. Never report trailing nulls as zero, as calm, or as "no sun".
 3. **Same cell, not a tie.** When `nasa_power_compare_locations` returns `possibleSharedGridCell`, the listed sites sit in one cell. Report them as indistinguishable, not as equal results.
 4. **Rate or total.** Check what a value measures before summing or comparing:
    - `PRECTOTCORR` is mm/day at every resolution. Monthly values, `YYYY13` and climatology months and `ANN` are mean daily rates, so multiply by the number of days for a total.
    - Solar units follow the community: `RE` returns kW-hr/m^2/day and `AG` returns MJ/m^2/day for the same code.
-   - Degree-day codes (`GDD*`, `HDD*`, `CDD*`) are totals for their period: per day, per month, and per year for `ANN` and `YYYY13`.
+   - Degree-day codes (`GDD*`, `HDD*`, `CDD*`) are totals for their period: per day, and for `HDD*` and `CDD*` also per month and per year for `ANN` and `YYYY13`.
    - Temperature, humidity and wind annual records are means.
-5. **Degree days come from NASA.** Growing degree days are source codes `GDD4_4`, `GDD7_2`, `GDD10`, `GDD13_3` and `GDD15_6` (base °C), alongside `HDD*` and `CDD*`. Request them; don't rebuild them from `T2M`. The dictionary also lists `GDD*` at monthly and climatology, but NASA's monthly and climatology endpoints fail on them with HTTP 500. Request `GDD*` at daily and sum the days.
+5. **Degree days come from NASA.** Growing degree days are source codes `GDD4_4`, `GDD7_2`, `GDD10`, `GDD13_3` and `GDD15_6` (base °C), alongside `HDD*` and `CDD*`. Request them; don't rebuild them from `T2M`. `GDD*` is served only at daily: NASA's dictionary lists it at monthly and climatology, but it has no data there, so those calls fail with `unsupported_parameter` before any data request and `nasa_power_search_parameters` doesn't offer it there. Request `GDD*` at daily over the dates you need and sum the days. For a climatological value, request daily across the climatology's start and end years, sum each year's days for the month, season or year, and average those sums across years.
 6. **Annual rows sit inside monthly data.** Monthly results add one annual record per year (`periodKind` `annual`, `month` null, key `YYYY13`), and climatology adds `ANN`. Exclude these rows before averaging or ranking months.
-7. **A regional box spans at least 2° on each axis.** For a smaller area, use a point call. The box returns one parameter per call, so make sequential calls for several parameters (gate 1).
+7. **A regional box spans at least 2° on each axis.** For a smaller area, use a point call. The box returns one parameter per call, so make one call per parameter when you need several.
 8. **Summaries are coarse.** `summaries` aggregate each period kind over the whole window. Comparison buckets are calendar-season means (DJF, MAM, JJA, SON, annual): they don't accumulate and don't follow a growing season. For any other grouping or any sum, compute it from the inline rows or with SQL.
 
 ## Workflows
@@ -59,7 +59,7 @@ Sites that fall in the same cell return identical values. The `returnedCoordinat
 
 ### Staged tables and SQL
 
-Staging is automatic. A data call stages only when the complete response would not fit inline. Smaller results come back inline with `dataset: null`, even when you pass `canvas_id`, and you compute from those rows directly.
+Staging is automatic. A data call stages only when the complete response would not fit inline. Smaller results come back inline with `dataset: null`, even when you pass `canvas_id`, and you compute from those rows directly. Where staging isn't available, an oversized result is refused with `canvas_required`. The refusal gives the result's row count, how many rows fit inline, and a list of calls (date or year windows, parameter groups, smaller regions or site groups); send those calls instead, as each fits inline.
 
 Results too large to return inline are staged as a DataCanvas table, and the response carries a `canvas_id`. Call `nasa_power_dataframe_describe` with it for the staged table and column names before writing SQL, then `nasa_power_dataframe_query` with a read-only query. Pass the same `canvas_id` back to stage further results beside the first; each table expires at the `expiresAt` on its handle.
 
