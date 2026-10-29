@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "nasa-power-mcp-server",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Query NASA POWER solar, wind, building, and agroclimatology data via MCP. STDIO or Streamable HTTP.",
   "author": { "name": "cyanheads", "email": "casey@caseyjhand.com", "url": "https://github.com/cyanheads" },
   "homepage": "https://github.com/cyanheads/nasa-power-mcp-server#readme",

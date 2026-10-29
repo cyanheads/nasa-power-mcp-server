@@ -1,6 +1,6 @@
 # nasa-power-mcp-server - Directory Structure
 
-Generated on: 2026-10-29 05:05:53
+Generated on: 2026-10-29 19:09:05
 
 ```text
 nasa-power-mcp-server/
@@ -191,6 +191,8 @@ nasa-power-mcp-server/
 │   │   ├── hour-extremes-regional.json
 │   │   ├── hour-group-monthly.json
 │   │   ├── hour-tracker-climatology.json
+│   │   ├── hour-wide-climatology.json
+│   │   ├── hour-wide-monthly.json
 │   │   ├── region-annual-summaries.json
 │   │   ├── region-annual.json
 │   │   ├── tilted-groups.json
