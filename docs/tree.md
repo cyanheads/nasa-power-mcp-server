@@ -1,6 +1,6 @@
 # nasa-power-mcp-server - Directory Structure
 
-Generated on: 2026-10-24 21:51:24
+Generated on: 2026-10-29 02:15:45
 
 ```text
 nasa-power-mcp-server/
@@ -27,6 +27,7 @@ nasa-power-mcp-server/
 │   ├── 0.1.x/
 │   ├── 0.2.x/
 │   ├── 0.3.x/
+│   ├── 0.4.x/
 │   └── template.md
 ├── docs/
 │   └── design.md
@@ -38,6 +39,8 @@ nasa-power-mcp-server/
 │   ├── add-resource/
 │   │   └── SKILL.md
 │   ├── add-service/
+│   │   └── SKILL.md
+│   ├── add-skill/
 │   │   └── SKILL.md
 │   ├── add-test/
 │   │   └── SKILL.md
@@ -135,6 +138,9 @@ nasa-power-mcp-server/
 │   ├── prune-musl-packages.ts
 │   ├── release-github.ts
 │   └── tree.ts
+├── skills/
+│   └── nasa-power-guide/
+│       └── SKILL.md
 ├── src/
 │   ├── config/
 │   │   └── server-config.ts
@@ -198,6 +204,8 @@ nasa-power-mcp-server/
 │   │       └── nasa-power-regional-summaries.test.ts
 │   ├── prompts/
 │   ├── resources/
+│   ├── scripts/
+│   │   └── mcpb-agent-docs.test.ts
 │   ├── services/
 │   │   ├── canvas/
 │   │   │   ├── canvas-service.test.ts
@@ -229,7 +237,9 @@ nasa-power-mcp-server/
 ├── Dockerfile
 ├── LICENSE
 ├── manifest.json
+├── mcp.json
 ├── package.json
+├── plugin.json
 ├── README.md
 ├── server.json
 ├── tsconfig.build.json
