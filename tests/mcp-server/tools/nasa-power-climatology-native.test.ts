@@ -7,6 +7,7 @@ import { PointOutputSchema } from '@/mcp-server/tools/definitions/point-contract
 import { initCanvasService } from '@/services/canvas/index.js';
 import { initPowerService } from '@/services/power/index.js';
 import { nativeFixture } from '../../services/canvas/fixture.js';
+import { sizedRefusal } from '../../sized-refusal.js';
 
 const parameters = [
   'SI_TILTED_AVG',
@@ -48,6 +49,23 @@ async function settle<T>(result: Promise<T>): Promise<T> {
   await vi.advanceTimersByTimeAsync(6000);
   return result;
 }
+/** The captured payload narrowed to the codes a request names, as POWER answers a narrower list. */
+function requested(url: URL) {
+  const codes = (url.searchParams.get('parameters') ?? '').split(',');
+  const keep = (key: string) =>
+    codes.some(
+      (code) => key === code || (code.startsWith('SI_TILTED_') && key.startsWith(`${code}_`)),
+    );
+  const narrow = (record: object) =>
+    Object.fromEntries(Object.entries(record).filter(([key]) => keep(key)));
+  return {
+    ...raw,
+    properties: { ...raw.properties, parameter: narrow(raw.properties.parameter) },
+    ...(raw.parameters && typeof raw.parameters === 'object'
+      ? { parameters: narrow(raw.parameters) }
+      : {}),
+  };
+}
 beforeEach(async () => {
   fixture = await nativeFixture();
   raw = JSON.parse(
@@ -61,7 +79,7 @@ beforeEach(async () => {
       if (url.pathname.endsWith('/parameters'))
         return Response.json(Object.fromEntries(parameters.map((code) => [code, {}])));
       if (url.pathname.endsWith('/configuration')) return Response.json({});
-      if (url.pathname.endsWith('/climatology/point')) return Response.json(raw);
+      if (url.pathname.endsWith('/climatology/point')) return Response.json(requested(url));
       throw new Error(`Unexpected replay URL: ${url}`);
     },
   });
@@ -139,14 +157,51 @@ it('reports canvas_required with narrowing guidance on both surfaces when native
   });
   try {
     const result = await settle(run());
+    const data = (
+      result.structuredContent as {
+        error: { data: { rowCount: number; inlineRows: number; recovery: { hint: string } } };
+      }
+    ).error.data;
     expect(result.structuredContent).toMatchObject({
-      error: {
-        data: { reason: 'canvas_required', recovery: { hint: expect.stringContaining('Narrow') } },
-      },
+      error: { data: { reason: 'canvas_required', rowCount: 13, calls: expect.any(Array) } },
     });
+    expect(data.recovery.hint).toContain(
+      `The complete result has 13 rows and at most ${data.inlineRows} fit inline in one call.`,
+    );
     expect(text(result)).toContain('canvas_required');
+    expect(text(result)).toContain('rowCount: 13');
     expect(text(result)).toContain('CANVAS_PROVIDER_TYPE=duckdb');
-    expect(text(result)).toContain('Narrow');
+  } finally {
+    await disabled.shutdown();
+  }
+});
+
+it('splits a wide climatology into parameter groups that each re-send inline and together cover every column', async () => {
+  const disabled = initCanvasService({
+    storage: fixture.storage,
+    config: { dataframeDropEnabled: false, maxCanvasesPerProcess: 8 },
+  });
+  try {
+    const split = sizedRefusal(await settle(run()), 13);
+    expect(split.inlineRows).toBe(13);
+    const calls = split.calls as { selection: { mode: string; parameters: string[] } }[];
+    for (const call of calls) {
+      expect(Object.keys(call)).toEqual(['selection']);
+      expect(call.selection.mode).toBe('parameters');
+    }
+    expect(calls.flatMap((call) => call.selection.parameters).sort()).toEqual(
+      [...parameters].sort(),
+    );
+    const columns = new Set<string>();
+    for (const call of calls) {
+      const result = await settle(run(call));
+      expect(result.isError).not.toBe(true);
+      const output = PointOutputSchema.parse(result.structuredContent);
+      expect(output).toMatchObject({ rowCount: 13, dataset: null });
+      for (const row of output.rows)
+        for (const key of Object.keys(row)) if (key in raw.properties.parameter) columns.add(key);
+    }
+    expect([...columns].sort()).toEqual(Object.keys(raw.properties.parameter).sort());
   } finally {
     await disabled.shutdown();
   }

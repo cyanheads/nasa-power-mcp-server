@@ -1,7 +1,13 @@
 /** @fileoverview Point and discovery contracts through the real network and presentation seams. @module tests/mcp-server/tools/nasa-power-point-discovery */
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
-import { createInMemoryStorage, runToolContract } from '@cyanheads/mcp-ts-core/testing';
+import {
+  createInMemoryStorage,
+  createMockContext,
+  runToolContract,
+} from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { POWER_LIMITS } from '@/config/server-config.js';
+import { compareLocationsTool } from '@/mcp-server/tools/definitions/nasa-power-compare-locations.tool.js';
 import { getClimatologyTool } from '@/mcp-server/tools/definitions/nasa-power-get-climatology.tool.js';
 import { getTimeseriesTool } from '@/mcp-server/tools/definitions/nasa-power-get-timeseries.tool.js';
 import { listReferenceTool } from '@/mcp-server/tools/definitions/nasa-power-list-reference.tool.js';
@@ -9,7 +15,9 @@ import { searchParametersTool } from '@/mcp-server/tools/definitions/nasa-power-
 import { initCanvasService } from '@/services/canvas/index.js';
 import { initPowerService } from '@/services/power/index.js';
 import { PRESETS } from '@/services/power/presets.js';
+import { fakePower, streamedBody } from '../../fake-power.js';
 import { markdownText } from '../../markdown-text.js';
+import { sizedRefusal } from '../../sized-refusal.js';
 
 const input = {
   temporalResolution: 'daily' as const,
@@ -103,6 +111,77 @@ describe('point tool consumption contracts', () => {
       expect(rendered).toContain(message);
     },
   );
+  it.each([
+    [
+      'climatology hour-extreme and tracker groups',
+      getClimatologyTool,
+      {},
+      {
+        ALLSKY_SFC_SW_DWN_HR_MAX: ['ALLSKY_SFC_SW_DWN_00_MAX', 'ALLSKY_SFC_SW_DWN_23_MAX'],
+        SI_TRACKER_AVG: ['SI_TRACKER_AVG_DUAL', 'SI_TRACKER_AVG_VSAT'],
+      },
+      { JAN: 1, ANN: 2 },
+    ],
+    [
+      'a monthly hour group',
+      getTimeseriesTool,
+      { temporalResolution: 'monthly', startYear: 2023, endYear: 2023 },
+      { ALLSKY_SFC_SW_DWN_HR: ['ALLSKY_SFC_SW_DWN_00', 'ALLSKY_SFC_SW_DWN_23'] },
+      { '202301': 1, '202313': 2 },
+    ],
+  ] as const)(
+    'reports returned %s under expansions on both surfaces',
+    async (_shape, definition, window, expansions, values) => {
+      const members: readonly string[] = Object.values(expansions).flat();
+      entries = Object.fromEntries(Object.keys(expansions).map((alias) => [alias, {}]));
+      body = payload(Object.fromEntries(members.map((code) => [code, values])));
+      const result = await settle(
+        runRaw(definition, {
+          latitude: 41.9,
+          longitude: -93.6,
+          ...window,
+          selection: { mode: 'parameters', parameters: Object.keys(expansions) },
+        }),
+      );
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toMatchObject({ expansions, omittedParameters: [] });
+      expect(text(result)).not.toContain('[` code `, ` messages `]');
+      for (const code of members) expect(text(result)).toContain(code);
+    },
+  );
+  it.each([
+    [
+      getClimatologyTool,
+      { community: 'AG', selection: { mode: 'parameters', parameters: ['GDD10'] } },
+      ['GDD10'],
+      'daily',
+    ],
+    [
+      getTimeseriesTool,
+      {
+        temporalResolution: 'monthly',
+        startYear: 2023,
+        endYear: 2023,
+        selection: { mode: 'parameters', parameters: ['T2M', 'ALLSKY_SFC_SW_DWN_HR_MIN'] },
+      },
+      ['ALLSKY_SFC_SW_DWN_HR_MIN'],
+      'climatology',
+    ],
+  ] as const)(
+    'refuses codes POWER lists but does not serve, on both surfaces, before any request (%#)',
+    async (definition, args, parameters, recovery) => {
+      entries = Object.fromEntries(['T2M', ...parameters].map((code) => [code, {}]));
+      const result = await settle(
+        runRaw(definition, { latitude: 41.9, longitude: -93.6, ...args }),
+      );
+      failure(result, 'unsupported_parameter');
+      expect(result.structuredContent).toMatchObject({
+        error: { data: { parameters, recovery: { hint: expect.stringContaining(recovery) } } },
+      });
+      for (const code of parameters) expect(text(result)).toContain(code);
+      expect(fetcher).not.toHaveBeenCalled();
+    },
+  );
   it('publishes canonical wind long names and resolution-specific preset expansions on both paths', async () => {
     const wind = await runToolContract(listReferenceTool, { topic: 'wind_surfaces' });
     expect(wind.structuredContent).toMatchObject({
@@ -145,6 +224,15 @@ describe('point tool consumption contracts', () => {
     });
     expect(text(presets)).toContain('T2M_MIN');
     expect(text(presets)).toContain('not reconstructed daily records');
+    const agro = (
+      presets.structuredContent as {
+        entries: { code: string; resolutions?: string[]; description: string }[];
+      }
+    ).entries.find(
+      (entry) => entry.code === 'agroclimatology' && entry.resolutions?.[0] === 'daily',
+    );
+    expect(agro?.description).toMatch(/GDD\*.*daily/);
+    expect(markdownText(text(presets))).toContain(agro?.description);
   });
   it.each([
     'airportgrass',
@@ -752,6 +840,62 @@ describe('point tool consumption contracts', () => {
     expect(text(last)).toContain('120');
   });
 
+  describe('codes POWER lists but does not serve', () => {
+    const gdd = ['GDD10', 'GDD13_3', 'GDD15_6', 'GDD4_4', 'GDD7_2'];
+    beforeEach(() => {
+      entries = {
+        ...Object.fromEntries(
+          gdd.map((code) => [code, { name: `Growing Degree Days ${code.slice(3)} C` }]),
+        ),
+        HDD18_3: { name: 'Heating Degree Days Below 18.3 C' },
+        ALLSKY_SFC_SW_DWN_HR_MAX: { name: 'All Sky Irradiance Hour-Based Maximum' },
+      };
+    });
+    it.each([
+      ['daily', gdd],
+      ['monthly', []],
+      ['climatology', []],
+    ] as const)(
+      'offers growing degree days only where POWER serves them: %s',
+      async (temporalResolution, codes) => {
+        const result = await settle(
+          runToolContract(searchParametersTool, { temporalResolution, filter: 'growing degree' }),
+        );
+        expect(result.structuredContent).toMatchObject({
+          total: codes.length,
+          hasMore: false,
+          entries: codes.map((code) => ({ code })),
+        });
+        if (temporalResolution === 'daily')
+          expect(result.structuredContent).not.toHaveProperty('notice');
+        else {
+          const { notice } = result.structuredContent as { notice: string };
+          expect(notice).toMatch(/GDD10.*daily/s);
+          expect(notice).not.toContain('No parameters matched');
+          expect(text(result)).toContain(notice);
+        }
+      },
+    );
+    it.each([
+      ['monthly', ['HDD18_3']],
+      ['climatology', ['ALLSKY_SFC_SW_DWN_HR_MAX', 'HDD18_3']],
+    ] as const)(
+      'counts and pages %s browsing after the exclusion',
+      async (temporalResolution, codes) => {
+        for (const [offset, expected] of [...codes, undefined].entries()) {
+          const page = await settle(
+            runToolContract(searchParametersTool, { temporalResolution, offset, limit: 1 }),
+          );
+          expect(page.structuredContent).toMatchObject({
+            total: codes.length,
+            hasMore: offset + 1 < codes.length,
+            entries: expected ? [{ code: expected }] : [],
+          });
+        }
+      },
+    );
+  });
+
   it('carries zero-hit guidance through enrichment to both consumption paths', async () => {
     const result = await settle(
       runToolContract(searchParametersTool, { filter: 'no-such-parameter' }),
@@ -781,8 +925,39 @@ describe('point tool consumption contracts', () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
-  it('returns producer admission failures before a third point request reaches NASA', async () => {
-    fetcher.mockImplementationOnce(
+  it('completes four overlapping small monthly calls at four points without a refusal', async () => {
+    const fake = fakePower(['T2M']);
+    source.dispose();
+    source = initPowerService({
+      fetch: fake.fetch,
+      config: { maxCanvasesPerProcess: 8, dataframeDropEnabled: false },
+    });
+    const points = [
+      [47.6, -122.3],
+      [40.7, -74],
+      [34, -118.2],
+      [41.9, -87.6],
+    ] as const;
+    const pending = points.map(([latitude, longitude]) =>
+      runToolContract(getTimeseriesTool, {
+        temporalResolution: 'monthly',
+        latitude,
+        longitude,
+        startYear: 2019,
+        endYear: 2019,
+        selection: { mode: 'parameters', parameters: ['T2M'] },
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(30_000);
+    for (const result of await Promise.all(pending)) {
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toMatchObject({ rowCount: 13, dataset: null });
+    }
+    expect(fake.requests).toHaveLength(4);
+  });
+
+  it('refuses a small call still waiting behind a stalled worst-case comparison with producer_capacity_exhausted before it reaches NASA', async () => {
+    fetcher.mockImplementation(
       async (_url, options) =>
         new Promise<Response>((_resolve, reject) => {
           options?.signal?.addEventListener('abort', () => reject(options.signal?.reason), {
@@ -790,14 +965,130 @@ describe('point tool consumption contracts', () => {
           });
         }),
     );
-    const first = runToolContract(getTimeseriesTool, input);
-    const second = runToolContract(getTimeseriesTool, input);
+    /** Two sites, every hour since 2001, the 15-code hourly maximum: capped at the whole tenant budget. */
+    const worst = runToolContract(compareLocationsTool, {
+      temporalResolution: 'hourly',
+      startDate: '2001-01-01',
+      endDate: '2026-10-18',
+      locations: [
+        { latitude: 1, longitude: 1, label: 'a' },
+        { latitude: 2, longitude: 2, label: 'b' },
+      ],
+      selection: {
+        mode: 'parameters',
+        parameters: Array.from({ length: 15 }, (_, i) => `P${i}`),
+      },
+    });
     await vi.advanceTimersByTimeAsync(0);
-    failure(await runToolContract(getTimeseriesTool, input), 'canvas_capacity_exhausted');
-    source.dispose();
-    await Promise.all([first, second]);
+    const small = runToolContract(getTimeseriesTool, input);
+    await vi.advanceTimersByTimeAsync(15_000);
+    const refused = await small;
+    failure(refused, 'producer_capacity_exhausted');
+    expect(refused.structuredContent).toMatchObject({
+      error: { code: JsonRpcErrorCode.RateLimited, data: { retryable: true } },
+    });
     expect(fetcher).toHaveBeenCalledTimes(1);
+    source.dispose();
+    await worst;
   });
+
+  it('completes a retried large-body call while another call holds the rest of the tenant budget', async () => {
+    const MiB = 1024 * 1024;
+    const json = JSON.stringify(payload({ T2M: { '20240101': 0, '20240102': 1 } }));
+    let attempts = 0;
+    source.dispose();
+    source = initPowerService({
+      fetch: async (url) => {
+        if (String(url).includes('/parameters?')) return Response.json(entries);
+        if (String(url).endsWith('/configuration'))
+          return Response.json({ settings: { start: '1981-01-01', end: '2025-12-31' } });
+        attempts++;
+        return attempts === 1
+          ? streamedBody(12 * MiB, 'error')
+          : new Response(json + ' '.repeat(13 * MiB));
+      },
+      config: { maxCanvasesPerProcess: 8, dataframeDropEnabled: false },
+    });
+    /** Leaves this call 20 MiB: the 13 MiB body it keeps fits, the 12 + 13 MiB it decoded would not. */
+    const hold = Promise.withResolvers<void>();
+    const holder = canvas.withProducer(
+      POWER_LIMITS.tenantInflightBytes - 20 * MiB,
+      createMockContext(),
+      () => hold.promise,
+    );
+    try {
+      const pending = runToolContract(getTimeseriesTool, input);
+      await vi.advanceTimersByTimeAsync(15_000);
+      const result = await pending;
+      expect(result.structuredContent).toMatchObject({ rowCount: 2, dataset: null });
+      expect(result.isError).not.toBe(true);
+      expect(attempts).toBe(2);
+    } finally {
+      hold.resolve();
+      await holder;
+    }
+  });
+
+  it.each([
+    [
+      'a daily year',
+      { temporalResolution: 'daily', startDate: '2024-01-01', endDate: '2024-12-31' },
+      366,
+    ],
+    [
+      'an hourly month',
+      { temporalResolution: 'hourly', startDate: '2024-01-01', endDate: '2024-01-31' },
+      744,
+    ],
+    ['a monthly span', { temporalResolution: 'monthly', startYear: 1990, endYear: 2024 }, 455],
+  ] as const)(
+    'sizes the canvas_required refusal for %s and every listed call re-sent fits inline',
+    async (_shape, window, rowCount) => {
+      const fake = fakePower(['T2M']);
+      source.dispose();
+      source = initPowerService({
+        fetch: fake.fetch,
+        config: { maxCanvasesPerProcess: 8, dataframeDropEnabled: false },
+      });
+      const args = {
+        latitude: 47.6,
+        longitude: -122.3,
+        selection: { mode: 'parameters', parameters: ['T2M'] },
+        ...window,
+      };
+      const refused = await settle(runRaw(getTimeseriesTool, args));
+      const split = sizedRefusal(refused, rowCount);
+      const keys = new Set<string>();
+      let delivered = 0;
+      for (const call of split.calls) {
+        expect(Object.keys(call).sort()).toEqual(
+          window.temporalResolution === 'monthly'
+            ? ['endYear', 'startYear']
+            : ['endDate', 'startDate'],
+        );
+        const result = await settle(runRaw(getTimeseriesTool, { ...args, ...call }));
+        expect(result.isError).not.toBe(true);
+        const output = result.structuredContent as {
+          rowCount: number;
+          dataset: null;
+          rows: { periodKey: string }[];
+        };
+        expect(output).toMatchObject({ dataset: null, rowCount: output.rows.length });
+        expect(output.rowCount).toBeLessThanOrEqual(split.inlineRows);
+        delivered += output.rowCount;
+        for (const row of output.rows) keys.add(row.periodKey);
+      }
+      expect(delivered).toBe(rowCount);
+      expect(keys.size).toBe(rowCount);
+      const [first, last] = [split.calls[0], split.calls.at(-1)];
+      expect(first).toMatchObject(
+        'startYear' in window ? { startYear: window.startYear } : { startDate: window.startDate },
+      );
+      expect(last).toMatchObject(
+        'endYear' in window ? { endYear: window.endYear } : { endDate: window.endDate },
+      );
+    },
+  );
 
   it.each([
     { limit: 1.5 },
@@ -826,7 +1117,7 @@ describe('point tool consumption contracts', () => {
     expect(result.isError).not.toBe(true);
     expect(result.structuredContent).toMatchObject({
       topic,
-      verifiedOn: '2026-10-19',
+      verifiedOn: '2026-10-28',
       entries: expect.any(Array),
     });
     const data = result.structuredContent as {

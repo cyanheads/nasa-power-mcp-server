@@ -7,6 +7,12 @@ export const POWER_LIMITS = {
   startGapMs: 2_000,
   queueDepth: 32,
   queueWaitMs: 15_000,
+  /**
+   * Producer admission is first-fit, so a call that fits may overtake one still waiting. Once the
+   * oldest waiting call has waited this long, later calls queue behind it instead: a stream of
+   * overlapping small calls cannot hold a large waiter's bytes until its admission wait ends.
+   */
+  queueOvertakeMs: 5_000,
   deadlineMs: 55_000,
   attemptMs: 20_000,
   attempts: 2,
@@ -26,6 +32,29 @@ export const POWER_LIMITS = {
   tenantInflightBytes: 64 * 1024 * 1024,
   processInflightBytes: 128 * 1024 * 1024,
   producers: 2,
+  /**
+   * Upper-bound sizing of one producing call's in-flight bytes (decoded bodies plus normalized
+   * rows), computed from the request before fetching: a cold dictionary and configuration pair,
+   * each upstream data response's header and parameter metadata, each regional grid cell's
+   * feature wrapper, each normalized row's identity and period fields, and each value as both
+   * source text and normalized column.
+   *
+   * The reference allowance is per resolution because the dictionary is: measured 2026-10-28
+   * across RE, AG and SB, the dictionary body is ~32 KB hourly, ~46 KB daily, ~449 KB monthly and
+   * ~561 KB climatology, and a configuration body ~0.3 KB. POWER sends these uncompressed, so the
+   * figures are the decoded body bytes the call budget counts; each allowance carries ~25%
+   * headroom for dictionary growth. A cached reference adds nothing, so this is the cold case.
+   */
+  estimateReferenceBytes: {
+    hourly: 48 * 1024,
+    daily: 64 * 1024,
+    monthly: 576 * 1024,
+    climatology: 704 * 1024,
+  },
+  estimateResponseBytes: 16 * 1024,
+  estimateCellBytes: 256,
+  estimateRowBytes: 384,
+  estimateValueBytes: 96,
   tablesPerCanvas: 8,
   canvasesPerTenant: 4,
   canvasesPerProcess: 8,

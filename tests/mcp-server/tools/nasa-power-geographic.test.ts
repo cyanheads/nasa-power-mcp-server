@@ -9,7 +9,9 @@ import { compareLocationsTool } from '@/mcp-server/tools/definitions/nasa-power-
 import { getRegionTool } from '@/mcp-server/tools/definitions/nasa-power-get-region.tool.js';
 import { initCanvasService } from '@/services/canvas/index.js';
 import { initPowerService } from '@/services/power/index.js';
+import { fakePower } from '../../fake-power.js';
 import { markdownText } from '../../markdown-text.js';
+import { sizedRefusal } from '../../sized-refusal.js';
 
 const selection = { mode: 'parameters' as const, parameters: ['T2M'] };
 const label = 'site\n**literal** | ``` https://example.com/site';
@@ -69,8 +71,21 @@ describe('geographic HTTP contracts', () => {
   let reply: (url: URL) => Response;
   const fetcher = vi.fn<typeof fetch>(async (url) => {
     const parsed = new URL(String(url));
+    /** POWER lists GDD10 and the hour-extreme group at every non-hourly resolution. */
     if (parsed.pathname.endsWith('/parameters'))
-      return Response.json({ T2M: {}, RH2M: {}, T_ZONES: {}, TM_ZONES: {} });
+      return Response.json(
+        Object.fromEntries(
+          [
+            'T2M',
+            'RH2M',
+            'T_ZONES',
+            'TM_ZONES',
+            'GDD10',
+            'ALLSKY_SFC_SW_DWN_HR_MAX',
+            'SI_TRACKER_AVG',
+          ].map((code) => [code, {}]),
+        ),
+      );
     if (parsed.pathname.endsWith('/configuration'))
       return Response.json({ settings: { start: '1981-01-01', end: '2025-12-31' } });
     return reply(parsed);
@@ -203,6 +218,89 @@ describe('geographic HTTP contracts', () => {
     expect(markdownText(text(result)).match(/N\/S Orientation/g)).toHaveLength(4);
   });
 
+  it.each([
+    ['monthly', { startYear: 2023, endYear: 2023 }],
+    ['climatology', {}],
+  ] as const)(
+    'rejects a %s GDD10 region on both surfaces before any request',
+    async (temporalResolution, window) => {
+      const { startDate: _start, endDate: _end, parameter: _parameter, ...bounds } = region;
+      const result = await settle(
+        runRaw(getRegionTool, { ...bounds, temporalResolution, ...window, parameter: 'GDD10' }),
+      );
+      failure(result, 'unsupported_parameter');
+      expect(result.structuredContent).toMatchObject({
+        error: {
+          data: { parameters: ['GDD10'], recovery: { hint: expect.stringContaining('daily') } },
+        },
+      });
+      expect(fetcher).not.toHaveBeenCalled();
+    },
+  );
+  it('rejects a GDD10 climatology comparison on both surfaces before any request', async () => {
+    const result = await settle(
+      runRaw(compareLocationsTool, {
+        locations,
+        selection: { mode: 'parameters', parameters: ['T2M', 'GDD10'] },
+      }),
+    );
+    failure(result, 'unsupported_parameter');
+    expect(result.structuredContent).toMatchObject({ error: { data: { parameters: ['GDD10'] } } });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+  it('reports a returned regional hour-extreme group under expansions on both surfaces', async () => {
+    const members = ['ALLSKY_SFC_SW_DWN_00_MAX', 'ALLSKY_SFC_SW_DWN_12_MAX'];
+    reply = () =>
+      Response.json({
+        type: 'FeatureCollection',
+        features: [40, 41].map((latitude) =>
+          feature(
+            Object.fromEntries(members.map((code) => [code, { JAN: latitude, ANN: 2 }])),
+            latitude,
+          ),
+        ),
+        parameters: Object.fromEntries(members.map((code) => [code, { units: 'MJ/m^2/day' }])),
+      });
+    const { startDate: _start, endDate: _end, parameter: _parameter, ...bounds } = region;
+    const result = await settle(
+      runRaw(getRegionTool, {
+        ...bounds,
+        temporalResolution: 'climatology',
+        parameter: 'ALLSKY_SFC_SW_DWN_HR_MAX',
+      }),
+    );
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      expansions: { ALLSKY_SFC_SW_DWN_HR_MAX: members },
+      omittedParameters: [],
+    });
+    expect(text(result)).not.toContain('[` code `, ` messages `]');
+    for (const code of members) expect(text(result)).toContain(code);
+  });
+  it('reports each location tracker group under expansions on both surfaces', async () => {
+    const members = ['SI_TRACKER_AVG_DUAL', 'SI_TRACKER_AVG_VSAT'];
+    reply = () =>
+      Response.json({
+        ...feature(Object.fromEntries(members.map((code) => [code, { JAN: 1, ANN: 2 }]))),
+        parameters: Object.fromEntries(members.map((code) => [code, { units: 'kW-hr/m^2/day' }])),
+      });
+    const result = await settle(
+      runRaw(compareLocationsTool, {
+        locations,
+        selection: { mode: 'parameters', parameters: ['SI_TRACKER_AVG'] },
+      }),
+    );
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      locations: locations.map(() => ({
+        expansions: { SI_TRACKER_AVG: members },
+        omittedParameters: [],
+      })),
+    });
+    /** The omission record header renders only when a location reports an omitted code. */
+    expect(text(result)).not.toContain('[` code `, ` messages `]');
+    for (const code of members) expect(text(result)).toContain(code);
+  });
   it('preserves the precomputed regional climatology period without a requested year window', async () => {
     reply = () =>
       Response.json({
@@ -733,4 +831,155 @@ describe('geographic HTTP contracts', () => {
     failure(result, 'dataset_limit');
     expect(observations()).toHaveLength(2);
   }, 15_000);
+
+  describe('sized canvas_required splits re-sent through the tool', () => {
+    /** Answers any window, box and code list, like POWER; inline-only canvas from the outer setup. */
+    const offline = (codes: string[]) => {
+      const fake = fakePower(codes);
+      source.dispose();
+      source = initPowerService({
+        fetch: fake.fetch,
+        config: { maxCanvasesPerProcess: 8, dataframeDropEnabled: false },
+      });
+    };
+    type Row = { periodKey: string; latitude: number; longitude: number; label?: string };
+    /** Cell and location ids are positional within one call, so identity is coordinates and label. */
+    const identity = (row: Row) =>
+      `${row.label ?? ''}|${row.latitude}|${row.longitude}|${row.periodKey}`;
+    const resend = async (
+      tool: typeof getRegionTool | typeof compareLocationsTool,
+      args: Record<string, unknown>,
+      calls: Record<string, unknown>[],
+    ) => {
+      const rows: Row[] = [];
+      for (const call of calls) {
+        const result = await settle(runRaw(tool, { ...args, ...call }));
+        expect(result.isError).not.toBe(true);
+        const output = result.structuredContent as { rowCount: number; dataset: null; rows: Row[] };
+        expect(output).toMatchObject({ dataset: null, rowCount: output.rows.length });
+        rows.push(...output.rows);
+      }
+      return rows;
+    };
+
+    it('splits a daily region by contiguous date windows that sum to the row count', async () => {
+      offline(['T2M']);
+      const args = { ...region, startDate: '2024-01-01', endDate: '2024-01-31' };
+      /** 5 latitudes × 4 longitudes on the 0.5° × 0.625° grid, 31 days. */
+      const split = sizedRefusal(await settle(runRaw(getRegionTool, args)), 620);
+      for (const call of split.calls)
+        expect(Object.keys(call).sort()).toEqual(['endDate', 'startDate']);
+      expect(split.calls[0]).toMatchObject({ startDate: '2024-01-01' });
+      expect(split.calls.at(-1)).toMatchObject({ endDate: '2024-01-31' });
+      const rows = await resend(getRegionTool, args, split.calls);
+      expect(rows).toHaveLength(620);
+      expect(new Set(rows.map(identity)).size).toBe(620);
+    });
+
+    it('splits a region whose single day exceeds one call into day windows over tiles of at least 2° per axis', async () => {
+      offline(['T2M']);
+      const args = {
+        latitudeMin: 40,
+        latitudeMax: 50,
+        longitudeMin: -125,
+        longitudeMax: -115,
+        parameter: 'T2M',
+        startDate: '2024-01-01',
+        endDate: '2024-01-03',
+      };
+      /** 21 latitudes × 17 longitudes, 3 days. */
+      const split = sizedRefusal(await settle(runRaw(getRegionTool, args)), 1071);
+      for (const call of split.calls) {
+        const tile = call as Record<
+          'latitudeMin' | 'latitudeMax' | 'longitudeMin' | 'longitudeMax',
+          number
+        >;
+        expect(Object.keys(tile).sort()).toEqual([
+          'endDate',
+          'latitudeMax',
+          'latitudeMin',
+          'longitudeMax',
+          'longitudeMin',
+          'startDate',
+        ]);
+        expect(tile.latitudeMax - tile.latitudeMin).toBeGreaterThanOrEqual(2);
+        expect(tile.longitudeMax - tile.longitudeMin).toBeGreaterThanOrEqual(2);
+      }
+      const tiles = new Set(split.calls.map((call) => `${call.latitudeMin}|${call.longitudeMin}`));
+      expect(tiles.size).toBeGreaterThan(1);
+      const rows = await resend(getRegionTool, args, split.calls);
+      /** POWER's bounds are inclusive, so tiles must partition the grid: each cell-day exactly once. */
+      expect(rows).toHaveLength(1071);
+      expect(new Set(rows.map(identity)).size).toBe(1071);
+    });
+
+    it('partitions an off-grid region into tiles that return each cell-day exactly once', async () => {
+      offline(['T2M']);
+      const args = {
+        latitudeMin: 40.2,
+        latitudeMax: 50.2,
+        longitudeMin: -124.9,
+        longitudeMax: -114.9,
+        parameter: 'T2M',
+        startDate: '2024-01-01',
+        endDate: '2024-01-03',
+      };
+      /** 20 latitudes (40.5 to 50) × 16 longitudes (−124.375 to −115), 3 days. */
+      const split = sizedRefusal(await settle(runRaw(getRegionTool, args)), 960);
+      const tiles = new Set(split.calls.map((call) => `${call.latitudeMin}|${call.longitudeMin}`));
+      expect(tiles.size).toBeGreaterThan(1);
+      for (const call of split.calls) {
+        const tile = call as Record<
+          'latitudeMin' | 'latitudeMax' | 'longitudeMin' | 'longitudeMax',
+          number
+        >;
+        expect(tile.latitudeMax - tile.latitudeMin).toBeGreaterThanOrEqual(2);
+        expect(tile.longitudeMax - tile.longitudeMin).toBeGreaterThanOrEqual(2);
+      }
+      const rows = await resend(getRegionTool, args, split.calls);
+      expect(rows).toHaveLength(960);
+      expect(new Set(rows.map(identity)).size).toBe(960);
+    });
+
+    it('splits a daily-year comparison by contiguous date windows that sum to the row count', async () => {
+      offline(['T2M']);
+      const args = {
+        temporalResolution: 'daily',
+        startDate: '2024-01-01',
+        endDate: '2024-12-31',
+        locations,
+        selection,
+      };
+      const split = sizedRefusal(await settle(runRaw(compareLocationsTool, args)), 3 * 366);
+      for (const call of split.calls)
+        expect(Object.keys(call).sort()).toEqual(['endDate', 'startDate']);
+      expect(split.calls[0]).toMatchObject({ startDate: '2024-01-01' });
+      expect(split.calls.at(-1)).toMatchObject({ endDate: '2024-12-31' });
+      const rows = await resend(compareLocationsTool, args, split.calls);
+      expect(rows).toHaveLength(3 * 366);
+      expect(new Set(rows.map(identity)).size).toBe(3 * 366);
+    });
+
+    it('splits a wide ten-site climatology comparison into site groups of at least two', async () => {
+      const codes = Array.from({ length: 6 }, (_, i) => `P${i}`);
+      offline(codes);
+      /** One label carries Markdown and JSON syntax and a line break, so each call line must round-trip it. */
+      const sites = Array.from({ length: 10 }, (_, i) => ({
+        latitude: 30 + i,
+        longitude: -100 - i,
+        label: i === 0 ? 'site `0` | *a* [b] "c" \\ {d}\ne' : `site ${i}`,
+      }));
+      const args = { locations: sites, selection: { mode: 'parameters', parameters: codes } };
+      const split = sizedRefusal(await settle(runRaw(compareLocationsTool, args)), 130);
+      const groups = split.calls.map((call) => (call as { locations: typeof sites }).locations);
+      for (const [index, group] of groups.entries()) {
+        expect(Object.keys(split.calls[index] ?? {})).toEqual(['locations']);
+        expect(group.length).toBeGreaterThanOrEqual(2);
+      }
+      expect(groups.flat()).toEqual(sites);
+      const rows = await resend(compareLocationsTool, args, split.calls);
+      expect(rows).toHaveLength(130);
+      expect(new Set(rows.map(identity)).size).toBe(130);
+    });
+  });
 });

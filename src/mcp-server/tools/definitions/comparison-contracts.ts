@@ -5,6 +5,7 @@ import { z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 import { POWER_LIMITS } from '@/config/server-config.js';
 import { getCanvasService, SummaryDatasetsSchema } from '@/services/canvas/index.js';
+import { estimateComparisonBytes } from '@/services/canvas/producer-estimate.js';
 import {
   type CompareRequest,
   DatasetHandleSchema,
@@ -131,9 +132,13 @@ export function presentComparison(
     request.selection.parameters = [...new Set(request.selection.parameters)];
   if (request.windSurface === 'airport_ice' || request.windSurface === 'airport ice')
     request.windSurface = 'airportice';
-  return getCanvasService().withProducer('comparison', ctx, async (producerCtx) => {
+  const canvas = getCanvasService();
+  return canvas.withProducer(estimateComparisonBytes(request), ctx, async (producerCtx, lease) => {
     const power = getPowerService();
-    const budget = power.createCallBudget(producerCtx, true);
+    const budget = power.createCallBudget(producerCtx, true, {
+      deadlineMs: lease.remainingMs(),
+      onHeldBytes: lease.bodyBytes,
+    });
     const callCtx = { ...producerCtx, signal: budget.signal };
     const { locations: inputs, sort, ...shared } = request;
     const first = inputs[0];
@@ -212,6 +217,7 @@ export function presentComparison(
           );
         rows.push(tagged);
       }
+      lease.rowBytes(rowBytes);
       summaries.push(...summarizeBuckets(dataset, identity.locationId));
       const numeric = dataset.parameters.filter((parameter) => parameter.valueKind === 'number');
       if (
@@ -306,7 +312,7 @@ export function presentComparison(
             : (sort.direction === 'asc' ? 1 : -1) * (a.sortMetric - b.sortMetric),
       );
     callCtx.signal.throwIfAborted();
-    return getCanvasService().presentComparison(
+    return canvas.presentComparison(
       {
         request,
         metadata: {
@@ -349,6 +355,7 @@ export function presentComparison(
       canvasId,
       callCtx,
       'nasa_power_compare_locations',
+      lease,
     );
   });
 }

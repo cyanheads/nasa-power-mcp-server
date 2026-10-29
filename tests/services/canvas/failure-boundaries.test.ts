@@ -166,10 +166,17 @@ describe('canvas failure cleanup and atomic admission', () => {
     try {
       await expect(
         fixture.service.query(handle.canvas_id, { sql: 'SELECT 1' }, fixture.ctx),
-      ).rejects.toMatchObject({ data: { reason: 'canvas_capacity_exhausted' } });
+      ).rejects.toMatchObject({ data: { reason: 'canvas_busy', retryable: true } });
       await expect(
         fixture.service.present(dataset(), handle.canvas_id, fixture.ctx, source),
-      ).rejects.toMatchObject({ data: { reason: 'canvas_capacity_exhausted' } });
+      ).rejects.toMatchObject({
+        data: {
+          reason: 'canvas_busy',
+          recovery: {
+            hint: 'A query or operation is already in flight; retry this call when it returns.',
+          },
+        },
+      });
       expect(fixture.canvas.countForTenant(fixture.ctx)).toBe(1);
     } finally {
       release.resolve();
@@ -231,10 +238,10 @@ describe('canvas failure cleanup and atomic admission', () => {
     try {
       await expect(
         fixture.service.present(dataset(), handle.canvas_id, fixture.ctx, source),
-      ).rejects.toMatchObject({ data: { reason: 'canvas_capacity_exhausted' } });
+      ).rejects.toMatchObject({ data: { reason: 'canvas_busy' } });
       await expect(
         fixture.service.describe(handle.canvas_id, {}, fixture.ctx),
-      ).rejects.toMatchObject({ data: { reason: 'canvas_capacity_exhausted' } });
+      ).rejects.toMatchObject({ data: { reason: 'canvas_busy' } });
     } finally {
       release();
     }
@@ -268,7 +275,7 @@ describe('canvas failure cleanup and atomic admission', () => {
     try {
       await expect(
         fixture.service.query(handle.canvas_id, { sql: 'SELECT 1' }, fixture.ctx),
-      ).rejects.toMatchObject({ data: { reason: 'canvas_capacity_exhausted' } });
+      ).rejects.toMatchObject({ data: { reason: 'canvas_busy' } });
     } finally {
       release();
     }

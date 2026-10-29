@@ -1,5 +1,6 @@
 /** @fileoverview Safe workspace failures and public recovery instructions. @module services/canvas/errors */
 import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
+import { describePowerError } from '../power/errors.js';
 
 const serviceErrors = new WeakSet<McpError>();
 /** Native messages already redact configured directories. Scan at most 2,048 characters. */
@@ -15,7 +16,7 @@ function diagnostic(error: McpError): string {
 const definitions = {
   canvas_required: [
     JsonRpcErrorCode.ConfigurationError,
-    'Narrow the request for inline output, or use the npm or Docker distribution with CANVAS_PROVIDER_TYPE=duckdb.',
+    'Re-send the request as the calls listed in the error, each sized to fit inline, or use the npm or Docker distribution with CANVAS_PROVIDER_TYPE=duckdb.',
   ],
   canvas_unavailable: [
     JsonRpcErrorCode.ConfigurationError,
@@ -29,6 +30,14 @@ const definitions = {
     JsonRpcErrorCode.RateLimited,
     'Reuse a canvas_id already returned to you, or wait for staged tables to expire before retrying.',
   ],
+  canvas_busy: [
+    JsonRpcErrorCode.RateLimited,
+    'A query or operation is already in flight; retry this call when it returns.',
+  ],
+  producer_capacity_exhausted: [
+    JsonRpcErrorCode.RateLimited,
+    'Another data call is in flight and holds the capacity this call needs; retry when it returns.',
+  ],
   missing_table: [
     JsonRpcErrorCode.NotFound,
     'Use nasa_power_dataframe_describe with the same canvas_id to inspect active tables, or rerun the producing tool.',
@@ -38,17 +47,31 @@ const definitions = {
     'Reduce SQL length or narrow the SELECT projection and row limit, then retry nasa_power_dataframe_query.',
   ],
 } as const;
-/** Create a classified failure without engine paths or private context. */
+/** Workspace failure reasons the canvas service raises. */
+export type CanvasErrorReason = keyof typeof definitions;
+/**
+ * Create a classified failure without engine paths or private context. Supplied `data` is
+ * rendered into the message too, so `content[]` carries the same facts as `error.data`. A
+ * `calls` list of re-sendable request changes renders one JSON line per call, every field it
+ * changes included, so a split of a hundred calls stays a hundred lines.
+ */
 export function canvasError(
-  reason: keyof typeof definitions,
+  reason: CanvasErrorReason,
   message: string,
   recovery?: string,
+  data: Record<string, unknown> = {},
 ): McpError {
   const [code, hint] = definitions[reason];
-  const error = new McpError(code, message, {
+  const { calls, ...rest } = data;
+  const described = describePowerError(message, rest);
+  const text = Array.isArray(calls)
+    ? `${described}\n\n${calls.length ? calls.map((call, index) => `calls[${index}]: ${JSON.stringify(call)}`).join('\n') : 'calls: []'}`
+    : described;
+  const error = new McpError(code, text, {
+    ...data,
     reason,
     recovery: { hint: recovery ?? hint },
-    ...(reason === 'canvas_capacity_exhausted' ? { retryable: true } : {}),
+    ...(code === JsonRpcErrorCode.RateLimited ? { retryable: true } : {}),
   });
   serviceErrors.add(error);
   return error;

@@ -61,7 +61,7 @@ export const listReferenceTool = tool('nasa_power_list_reference', {
               code === 'water_balance'
                 ? 'Related precipitation, evapotranspiration and soil-wetness observations; incompatible units prohibit direct subtraction.'
                 : code === 'agroclimatology' && resolutions[0] !== 'hourly'
-                  ? 'Includes source-period maximum and minimum temperature; monthly and climatology extremes are source aggregates, not reconstructed daily records or calculated growing degree days.'
+                  ? 'Includes source-period maximum and minimum temperature; monthly and climatology extremes are source aggregates, not reconstructed daily records or calculated growing degree days. Growing degree days (GDD*) are served at daily resolution only; sum the daily values for a monthly or seasonal total.'
                   : 'Exact parameter group, validated against the selected community/resolution dictionary at retrieval.',
           });
       entries.push({
@@ -194,7 +194,7 @@ export const listReferenceTool = tool('nasa_power_list_reference', {
         'Use nasa_power_dataframe_describe and nasa_power_dataframe_query with the exact returned canvas_id. Tokens expire and cannot cross processes.',
         'Oversized comparison summaries have summaryDatasets handles; query in summaryIndex order and group location summaries by locationId. SQL NULL units restore an omitted source unit.',
         'Oversized regional summaries have a summaryDataset handle and exact summaryCount; query in summaryIndex order to restore every cross-cell summary.',
-        'npm and Docker installs stage larger tables in DuckDB by default; the portable MCPB supports inline data only. Narrow the request when no native provider is available.',
+        'npm and Docker installs stage larger tables in DuckDB by default; the portable MCPB supports inline data only. Without a native provider, an oversized result is refused with canvas_required listing calls that each fit inline; send those calls.',
       );
       if (getServerConfig().dataframeDropEnabled)
         guidance.push(
@@ -203,7 +203,7 @@ export const listReferenceTool = tool('nasa_power_list_reference', {
     }
     return {
       topic,
-      verifiedOn: '2026-10-19',
+      verifiedOn: '2026-10-28',
       documentationUrls: [
         'https://power.larc.nasa.gov/docs/services/api/',
         'https://power.larc.nasa.gov/docs/methodology/',

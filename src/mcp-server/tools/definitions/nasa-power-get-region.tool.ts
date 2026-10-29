@@ -4,6 +4,7 @@ import { CanvasIdSchema } from '@cyanheads/mcp-ts-core/canvas';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { formatFaithfully } from '@/services/canvas/format.js';
 import { getCanvasService } from '@/services/canvas/index.js';
+import { estimateRegionBytes } from '@/services/canvas/producer-estimate.js';
 import {
   DatasetHandleSchema,
   getPowerService,
@@ -96,7 +97,7 @@ export const getRegionTool = tool('nasa_power_get_region', {
       code: JsonRpcErrorCode.ConfigurationError,
       when: 'Oversized observations require an enabled workspace',
       recovery:
-        'Narrow the request for inline output, or use the npm or Docker distribution with CANVAS_PROVIDER_TYPE=duckdb.',
+        'Re-send the request as the calls listed in the error, each sized to fit inline, or use the npm or Docker distribution with CANVAS_PROVIDER_TYPE=duckdb.',
       thrownBy: 'service',
     },
     {
@@ -108,11 +109,28 @@ export const getRegionTool = tool('nasa_power_get_region', {
       thrownBy: 'service',
     },
     {
+      reason: 'producer_capacity_exhausted',
+      code: JsonRpcErrorCode.RateLimited,
+      when: 'Other data calls hold the in-flight capacity this call needs past its admission wait',
+      recovery:
+        'Another data call is in flight and holds the capacity this call needs; retry when it returns.',
+      thrownBy: 'service',
+      retryable: true,
+    },
+    {
       reason: 'canvas_capacity_exhausted',
       code: JsonRpcErrorCode.RateLimited,
-      when: 'Producer or staging admission capacity is exhausted',
+      when: 'Canvas count, table or retained staging capacity is exhausted',
       recovery:
         'Reuse a canvas_id already returned to you, or wait for staged tables to expire before retrying.',
+      thrownBy: 'service',
+      retryable: true,
+    },
+    {
+      reason: 'canvas_busy',
+      code: JsonRpcErrorCode.RateLimited,
+      when: 'Another query, staging or removal occupies the supplied canvas',
+      recovery: 'A query or operation is already in flight; retry this call when it returns.',
       thrownBy: 'service',
       retryable: true,
     },
@@ -136,15 +154,19 @@ export const getRegionTool = tool('nasa_power_get_region', {
   handler(input, ctx) {
     const { canvas_id, ...request } = input;
     const canvas = getCanvasService();
-    return canvas.withProducer('single', ctx, async (producerCtx) => {
+    return canvas.withProducer(estimateRegionBytes(request), ctx, async (producerCtx, lease) => {
       const power = getPowerService();
-      const budget = power.createCallBudget(producerCtx);
+      const budget = power.createCallBudget(producerCtx, false, {
+        deadlineMs: lease.remainingMs(),
+        onHeldBytes: lease.bodyBytes,
+      });
       const callCtx = { ...producerCtx, signal: budget.signal };
       return canvas.presentRegion(
         await power.region(request, callCtx, budget),
         canvas_id,
         callCtx,
         'nasa_power_get_region',
+        lease,
       );
     });
   },

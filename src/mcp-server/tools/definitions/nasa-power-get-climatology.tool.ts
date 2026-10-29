@@ -27,7 +27,7 @@ export const getClimatologyTool = tool('nasa_power_get_climatology', {
       code: JsonRpcErrorCode.ConfigurationError,
       when: 'Oversized observations require an enabled workspace',
       recovery:
-        'Narrow the request for inline output, or use the npm or Docker distribution with CANVAS_PROVIDER_TYPE=duckdb.',
+        'Re-send the request as the calls listed in the error, each sized to fit inline, or use the npm or Docker distribution with CANVAS_PROVIDER_TYPE=duckdb.',
       thrownBy: 'service',
     },
     {
@@ -104,11 +104,28 @@ export const getClimatologyTool = tool('nasa_power_get_climatology', {
       thrownBy: 'service',
     },
     {
+      reason: 'producer_capacity_exhausted',
+      code: JsonRpcErrorCode.RateLimited,
+      when: 'Other data calls hold the in-flight capacity this call needs past its admission wait',
+      recovery:
+        'Another data call is in flight and holds the capacity this call needs; retry when it returns.',
+      thrownBy: 'service',
+      retryable: true,
+    },
+    {
       reason: 'canvas_capacity_exhausted',
       code: JsonRpcErrorCode.RateLimited,
-      when: 'Producer or staging admission capacity is exhausted',
+      when: 'Canvas count, table or retained staging capacity is exhausted',
       recovery:
         'Reuse a canvas_id already returned to you, or wait for staged tables to expire before retrying.',
+      thrownBy: 'service',
+      retryable: true,
+    },
+    {
+      reason: 'canvas_busy',
+      code: JsonRpcErrorCode.RateLimited,
+      when: 'Another query, staging or removal occupies the supplied canvas',
+      recovery: 'A query or operation is already in flight; retry this call when it returns.',
       thrownBy: 'service',
       retryable: true,
     },

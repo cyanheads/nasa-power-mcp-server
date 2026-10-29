@@ -1,8 +1,15 @@
 /** @fileoverview Native staging, isolation and workload contracts. @module tests/services/canvas/canvas-service */
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import type { Context } from '@cyanheads/mcp-ts-core';
+import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
+import { createInMemoryStorage, createMockContext } from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { POWER_LIMITS } from '@/config/server-config.js';
-import { createCanvasService } from '@/services/canvas/index.js';
+import {
+  type CanvasService,
+  createCanvasService,
+  type ProducerLease,
+} from '@/services/canvas/index.js';
+import { PRODUCER_CAP_BYTES } from '@/services/canvas/producer-estimate.js';
 import { dataset, nativeFixture } from './fixture.js';
 
 describe('CanvasService with DuckDB', () => {
@@ -293,9 +300,12 @@ describe('CanvasService with DuckDB', () => {
       config: { maxCanvasesPerProcess: 8, dataframeDropEnabled: false },
     });
     try {
-      await expect(
-        service.present(dataset(), undefined, fixture.ctx, source),
-      ).rejects.toMatchObject({ data: { reason: 'canvas_required' } });
+      /** Without a split planner no call list exists, and the message still says so. */
+      const refusal = await service
+        .present(dataset(), undefined, fixture.ctx, source)
+        .catch((error: McpError) => error);
+      expect(refusal).toMatchObject({ data: { reason: 'canvas_required', calls: [] } });
+      expect((refusal as McpError).message).toMatch(/\n\ninlineRows: \d+\n\ncalls: \[\]$/);
       await expect(service.describe('abcdefghij', {}, fixture.ctx)).rejects.toMatchObject({
         data: { reason: 'canvas_unavailable' },
       });
@@ -311,34 +321,300 @@ describe('CanvasService with DuckDB', () => {
       await service.shutdown();
     }
   });
-  it('holds producer admissions atomically and shutdown aborts and settles them', async () => {
-    let started!: () => void;
-    const began = new Promise<void>((resolve) => {
-      started = resolve;
+});
+
+describe('producer admission', () => {
+  const MiB = 1024 * 1024;
+  let service: CanvasService;
+  beforeEach(() => {
+    vi.useFakeTimers();
+    service = createCanvasService({
+      storage: createInMemoryStorage(),
+      config: { maxCanvasesPerProcess: 8, dataframeDropEnabled: false },
     });
-    const pending = fixture.service
-      .withProducer('single', fixture.ctx, async (ctx) => {
-        started();
-        await new Promise<void>((_resolve, reject) => {
-          ctx.signal.addEventListener('abort', () => reject(ctx.signal.reason), { once: true });
+  });
+  afterEach(async () => {
+    await service.shutdown();
+    vi.useRealTimers();
+  });
+  /** One producing call that runs until released or aborted, exposing its lease and outcome. */
+  function call(estimate: number, ctx: Context = createMockContext()) {
+    const gate = Promise.withResolvers<void>();
+    const state: { lease?: ProducerLease; signal?: AbortSignal; ran: boolean } = { ran: false };
+    const outcome = service
+      .withProducer(estimate, ctx, async (runCtx, lease) => {
+        state.ran = true;
+        state.lease = lease;
+        state.signal = runCtx.signal;
+        runCtx.signal.throwIfAborted();
+        await new Promise<void>((resolve, reject) => {
+          gate.promise.then(resolve);
+          runCtx.signal.addEventListener('abort', () => reject(runCtx.signal.reason), {
+            once: true,
+          });
         });
+        return estimate;
       })
-      .catch((error: unknown) => error);
-    await began;
-    await expect(
-      fixture.service.withProducer('single', fixture.ctx, async () => 1),
-    ).rejects.toMatchObject({ data: { reason: 'canvas_capacity_exhausted' } });
-    expect(
-      await fixture.service.withProducer(
-        'single',
-        createMockContext({ tenantId: 'other' }),
-        async () => 2,
-      ),
-    ).toBe(2);
-    await fixture.service.shutdown();
-    expect(await pending).toBeInstanceOf(Error);
-    await expect(stage()).rejects.toMatchObject({
-      message: 'Analytical workspace is shutting down.',
+      .then(
+        (value) => ({ value }),
+        (error: unknown) => ({ error }),
+      );
+    let settled = false;
+    void outcome.then(() => {
+      settled = true;
     });
+    return {
+      state,
+      outcome,
+      release: () => gate.resolve(),
+      get settled() {
+        return settled;
+      },
+    };
+  }
+  const tick = () => vi.advanceTimersByTimeAsync(0);
+
+  it('runs two overlapping small calls at once and admits the rest in arrival order as each returns', async () => {
+    const calls = Array.from({ length: 4 }, () => call(64 * 1024));
+    await tick();
+    expect(calls.map((item) => item.state.ran)).toEqual([true, true, false, false]);
+    calls[0]!.release();
+    expect(await calls[0]!.outcome).toEqual({ value: 64 * 1024 });
+    await tick();
+    expect(calls.map((item) => item.state.ran)).toEqual([true, true, true, false]);
+    calls[1]!.release();
+    await tick();
+    expect(calls[3]!.state.ran).toBe(true);
+    calls[2]!.release();
+    calls[3]!.release();
+    for (const item of calls) expect(await item.outcome).toEqual({ value: 64 * 1024 });
+  });
+
+  it('admits a small call beside an in-flight large call only while both estimates fit the tenant ceiling', async () => {
+    const regional = call(PRODUCER_CAP_BYTES.single);
+    const small = call(MiB);
+    await tick();
+    expect([regional.state.ran, small.state.ran]).toEqual([true, true]);
+    regional.release();
+    small.release();
+    await Promise.all([regional.outcome, small.outcome]);
+    const comparison = call(PRODUCER_CAP_BYTES.comparison);
+    const sameTenant = call(MiB);
+    const otherTenant = call(MiB, createMockContext({ tenantId: 'other' }));
+    await tick();
+    expect([comparison.state.ran, sameTenant.state.ran, otherTenant.state.ran]).toEqual([
+      true,
+      false,
+      true,
+    ]);
+    comparison.release();
+    otherTenant.release();
+    await tick();
+    expect(sameTenant.state.ran).toBe(true);
+    sameTenant.release();
+    expect(await sameTenant.outcome).toEqual({ value: MiB });
+  });
+
+  it('refuses a small call still waiting behind a worst-case call after exactly the admission wait', async () => {
+    const worst = call(PRODUCER_CAP_BYTES.comparison);
+    const small = call(MiB);
+    await vi.advanceTimersByTimeAsync(POWER_LIMITS.queueWaitMs - 1);
+    expect(small.settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    const { error } = (await small.outcome) as { error: McpError };
+    expect(error).toBeInstanceOf(McpError);
+    expect(error.code).toBe(JsonRpcErrorCode.RateLimited);
+    expect(error.data).toMatchObject({
+      reason: 'producer_capacity_exhausted',
+      retryable: true,
+      recovery: {
+        hint: 'Another data call is in flight and holds the capacity this call needs; retry when it returns.',
+      },
+    });
+    expect(small.state.ran).toBe(false);
+    worst.release();
+    expect(await worst.outcome).toEqual({ value: PRODUCER_CAP_BYTES.comparison });
+  });
+
+  it('rejects an aborted waiter with its own reason and leaves no reservation, as does an abort right after admission', async () => {
+    const [first, second] = [call(MiB), call(MiB)];
+    const waiting = new AbortController();
+    const aborted = call(MiB, createMockContext({ signal: waiting.signal }));
+    const racing = new AbortController();
+    const raced = call(MiB, createMockContext({ signal: racing.signal }));
+    await tick();
+    waiting.abort();
+    await tick();
+    expect(await aborted.outcome).toMatchObject({ error: { name: 'AbortError' } });
+    expect(aborted.state.ran).toBe(false);
+    first.release();
+    await first.outcome;
+    expect(raced.state.ran).toBe(true);
+    racing.abort();
+    expect(await raced.outcome).toMatchObject({ error: { name: 'AbortError' } });
+    second.release();
+    await Promise.all([first.outcome, second.outcome]);
+    const whole = call(POWER_LIMITS.tenantInflightBytes);
+    await tick();
+    expect(whole.state.ran).toBe(true);
+    whole.release();
+    expect(await whole.outcome).toEqual({ value: POWER_LIMITS.tenantInflightBytes });
+  });
+
+  it('grows a reservation atomically and refuses growth past the tenant ceiling', async () => {
+    const growing = call(MiB);
+    await tick();
+    const lease = growing.state.lease!;
+    lease.rowBytes(40 * MiB);
+    lease.bodyBytes(10 * MiB);
+    const blocked = call(20 * MiB);
+    const other = call(60 * MiB, createMockContext({ tenantId: 'other' }));
+    await tick();
+    expect([blocked.state.ran, other.state.ran]).toEqual([false, true]);
+    let refusal: unknown;
+    try {
+      lease.rowBytes(60 * MiB);
+    } catch (error) {
+      refusal = error;
+    }
+    expect(refusal).toMatchObject({
+      code: JsonRpcErrorCode.RateLimited,
+      data: { reason: 'producer_capacity_exhausted', retryable: true },
+    });
+    expect(growing.state.signal?.aborted).toBe(true);
+    expect(growing.state.signal?.reason).toBe(refusal);
+    expect(await growing.outcome).toEqual({ error: refusal });
+    await tick();
+    expect(blocked.state.ran).toBe(true);
+    blocked.release();
+    other.release();
+    await Promise.all([blocked.outcome, other.outcome]);
+  });
+
+  it('starts the call deadline at tool entry, so admission wait is subtracted from it', async () => {
+    const [first, second] = [call(MiB), call(MiB)];
+    const late = call(MiB);
+    await vi.advanceTimersByTimeAsync(10_000);
+    first.release();
+    await tick();
+    expect(late.state.lease?.remainingMs()).toBe(POWER_LIMITS.deadlineMs - 10_000);
+    await vi.advanceTimersByTimeAsync(POWER_LIMITS.deadlineMs - 10_000 - 1);
+    expect(late.state.signal?.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(late.state.signal?.aborted).toBe(true);
+    expect(await late.outcome).toMatchObject({ error: { name: 'TimeoutError' } });
+    second.release();
+    await second.outcome;
+  });
+
+  it('admits a worst-case comparison waiting behind a steady stream of overlapping small calls before its admission wait ends', async () => {
+    /** Each small call runs 1 s and a new one arrives every 500 ms, so one is always in flight. */
+    const stream = [call(64 * 1024)];
+    const worst = call(PRODUCER_CAP_BYTES.comparison);
+    await tick();
+    expect([stream[0]!.state.ran, worst.state.ran]).toEqual([true, false]);
+    let admittedAt: number | undefined;
+    for (let at = 500; at < POWER_LIMITS.queueWaitMs; at += 500) {
+      await vi.advanceTimersByTimeAsync(500);
+      stream.at(-2)?.release();
+      await tick();
+      if (worst.state.ran) {
+        admittedAt = at;
+        break;
+      }
+      stream.push(call(64 * 1024));
+      await tick();
+    }
+    expect(worst.state.ran).toBe(true);
+    /** Arrivals overtake a fresh waiter; once it has waited its overtake window they queue behind it. */
+    expect(stream[1]!.state.ran).toBe(true);
+    expect(admittedAt).toBe(POWER_LIMITS.queueOvertakeMs + 500);
+    expect(stream.at(-1)!.state.ran).toBe(false);
+    worst.release();
+    await tick();
+    expect(stream.at(-1)!.state.ran).toBe(true);
+    for (const item of stream) item.release();
+    expect(await worst.outcome).toEqual({ value: PRODUCER_CAP_BYTES.comparison });
+    await Promise.all(stream.map((item) => item.outcome));
+  });
+
+  it('lets a queued call that fits overtake a waiting call only inside its overtake window', async () => {
+    const holder = call(20 * MiB);
+    const first = call(MiB);
+    /** 20 MiB in flight leaves the tenant too little for a single-site worst case. */
+    const worst = call(PRODUCER_CAP_BYTES.single);
+    const early = call(MiB);
+    await tick();
+    expect([holder, first, worst, early].map((item) => item.state.ran)).toEqual([
+      true,
+      true,
+      false,
+      false,
+    ]);
+    await vi.advanceTimersByTimeAsync(1_000);
+    first.release();
+    await tick();
+    expect([worst.state.ran, early.state.ran]).toEqual([false, true]);
+    const late = call(MiB);
+    await vi.advanceTimersByTimeAsync(POWER_LIMITS.queueOvertakeMs - 1_000);
+    early.release();
+    await tick();
+    expect([worst.state.ran, late.state.ran]).toEqual([false, false]);
+    holder.release();
+    await tick();
+    expect([worst.state.ran, late.state.ran]).toEqual([true, true]);
+    for (const item of [worst, late]) item.release();
+    await Promise.all([holder, first, worst, early, late].map((item) => item.outcome));
+  });
+
+  it.each([
+    ['times out', () => vi.advanceTimersByTimeAsync(POWER_LIMITS.queueWaitMs - 6_000)],
+    ['is aborted', (abort: AbortController) => Promise.resolve(abort.abort())],
+  ] as const)(
+    'admits a queued call that fits once the waiter it queued behind %s',
+    async (_exit, leave) => {
+      /** 48 MiB in flight: a second single-site worst case waits, a 1 MiB call fits. */
+      const holder = call(PRODUCER_CAP_BYTES.single);
+      const abort = new AbortController();
+      const blocked = call(PRODUCER_CAP_BYTES.single, createMockContext({ signal: abort.signal }));
+      await vi.advanceTimersByTimeAsync(6_000);
+      const small = call(MiB);
+      await tick();
+      expect(small.state.ran).toBe(false);
+      await leave(abort);
+      await blocked.outcome;
+      await tick();
+      expect(small.state.ran).toBe(true);
+      holder.release();
+      small.release();
+      expect(await small.outcome).toEqual({ value: MiB });
+    },
+  );
+
+  it('rejects every waiter on shutdown, aborts admitted calls and refuses new work', async () => {
+    const admitted = [call(MiB), call(MiB)];
+    const waiters = [call(MiB), call(MiB)];
+    await tick();
+    await service.shutdown();
+    await Promise.all([...admitted, ...waiters].map((item) => item.outcome));
+    /** Waiter admission timers and admitted call deadlines are all cleared. */
+    expect(vi.getTimerCount()).toBe(0);
+    for (const item of waiters) {
+      expect(await item.outcome).toMatchObject({
+        error: {
+          code: JsonRpcErrorCode.ServiceUnavailable,
+          message: 'Analytical workspace is shutting down.',
+        },
+      });
+      expect(item.state.ran).toBe(false);
+    }
+    for (const item of admitted)
+      expect(await item.outcome).toMatchObject({ error: expect.any(Error) });
+    await expect(
+      service.withProducer(MiB, createMockContext(), async () => 1),
+    ).rejects.toMatchObject({ message: 'Analytical workspace is shutting down.' });
+    await expect(
+      service.present(dataset(), undefined, createMockContext(), 'nasa_power_get_timeseries'),
+    ).rejects.toMatchObject({ message: 'Analytical workspace is shutting down.' });
   });
 });

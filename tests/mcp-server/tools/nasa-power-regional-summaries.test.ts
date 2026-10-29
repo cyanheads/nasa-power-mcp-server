@@ -270,12 +270,20 @@ it('returns actionable canvas_required for an annual region with native staging 
   });
   try {
     const result = await settle(run());
+    const data = (
+      result.structuredContent as {
+        error: { data: { rowCount: number; inlineRows: number; recovery: { hint: string } } };
+      }
+    ).error.data;
     expect(result.structuredContent).toMatchObject({
-      error: {
-        data: { reason: 'canvas_required', recovery: { hint: expect.stringContaining('Narrow') } },
-      },
+      error: { data: { reason: 'canvas_required', calls: expect.any(Array) } },
     });
+    expect(data.rowCount).toBeGreaterThan(data.inlineRows);
+    expect(data.recovery.hint).toContain(
+      `The complete result has ${data.rowCount} rows and at most ${data.inlineRows} fit inline in one call.`,
+    );
     expect(text(result)).toContain('canvas_required');
+    expect(text(result)).toContain(`rowCount: ${data.rowCount}`);
     expect(text(result)).toContain('CANVAS_PROVIDER_TYPE=duckdb');
   } finally {
     await disabled.shutdown();

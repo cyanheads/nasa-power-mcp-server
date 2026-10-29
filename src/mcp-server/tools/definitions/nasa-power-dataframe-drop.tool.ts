@@ -42,11 +42,10 @@ const definition = tool('nasa_power_dataframe_drop', {
       thrownBy: 'service',
     },
     {
-      reason: 'canvas_capacity_exhausted',
+      reason: 'canvas_busy',
       code: JsonRpcErrorCode.RateLimited,
-      when: 'Another operation occupies this canvas',
-      recovery:
-        'Reuse a canvas_id already returned to you, or wait for staged tables to expire before retrying.',
+      when: 'Another query, staging or removal occupies this canvas',
+      recovery: 'A query or operation is already in flight; retry this call when it returns.',
       retryable: true,
       thrownBy: 'service',
     },

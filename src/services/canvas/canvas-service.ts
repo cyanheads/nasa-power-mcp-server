@@ -15,6 +15,15 @@ import { type ObservationRow, powerError } from '../power/index.js';
 import { canvasError, safeCanvasError } from './errors.js';
 import { formatFaithfully } from './format.js';
 import {
+  type ComparisonShape,
+  comparisonSplit,
+  prefixSplit,
+  type RegionShape,
+  regionSplit,
+  type SplitPlanner,
+  splitRecovery,
+} from './inline-split.js';
+import {
   type ComparisonDataset,
   type PresentableDataset,
   type PresentedDataset,
@@ -49,9 +58,39 @@ type CanvasRecord = {
 };
 type Producer = {
   tenant: string;
+  /** Reserved in-flight bytes; starts at the call's estimate and only grows. */
   bytes: number;
   controller: AbortController;
   settled: Promise<void>;
+  finish: () => void;
+};
+type Waiter = {
+  tenant: string;
+  bytes: number;
+  /** When the call started waiting, for the overtake window. */
+  since: number;
+  admit: (producer: Producer) => void;
+  refuse: (error: unknown) => void;
+};
+/**
+ * One admitted producing call. Its deadline started at tool entry, so admission wait, fetch,
+ * normalization and staging share it. The reservation starts at the caller's estimate and grows
+ * atomically when measured bytes exceed it; growth that would breach the tenant or process
+ * in-flight ceiling aborts the call with `producer_capacity_exhausted`.
+ */
+export type ProducerLease = {
+  /** Milliseconds left of the call deadline. */
+  remainingMs(): number;
+  /** Record the decoded upstream body bytes this call holds now; a discarded attempt's body is not held. */
+  bodyBytes(total: number): void;
+  /** Record the normalized row bytes this call holds so far. */
+  rowBytes(total: number): void;
+};
+/** Presentation inputs beyond the dataset; producers pass their lease and split planner. */
+export type PresentOptions = {
+  lease?: ProducerLease | undefined;
+  /** Sizes the `canvas_required` refusal's split; defaults to the inline row-prefix capacity alone. */
+  split?: SplitPlanner;
 };
 /** Service dependencies; native lifecycle settings are supplied to the framework at startup. */
 export type CanvasServiceOptions = {
@@ -72,6 +111,7 @@ export class CanvasService {
   private readonly canvasLimits: NonNullable<CanvasServiceOptions['canvasLimits']>;
   private readonly records = new Map<string, CanvasRecord>();
   private readonly producers = new Set<Producer>();
+  private readonly waiters: Waiter[] = [];
   private readonly operations = new Set<Promise<unknown>>();
   private readonly shutdownController = new AbortController();
   private queryCount = 0;
@@ -100,63 +140,184 @@ export class CanvasService {
   get enabled(): boolean {
     return this.canvas !== undefined;
   }
-  /** Producer admission includes cache-hit copies and spans fetch through presentation. */
+  /**
+   * Run one producing call under an in-flight reservation of `estimateBytes`, an upper bound the
+   * caller computes from its request before fetching (see `producer-estimate.ts`). The call's
+   * deadline starts here, at tool entry. When the producer count or the tenant or process byte
+   * ceiling is exhausted, admission waits up to the queue wait inside that deadline, admitting
+   * waiters in arrival order as capacity frees. A call that fits may overtake a waiting one until
+   * the oldest waiter has waited the overtake window; after that, calls queue behind it, so it
+   * cannot be starved by smaller calls that keep its bytes in use. A call still waiting is refused with
+   * `producer_capacity_exhausted`. A waiting call aborted by its caller rejects with the caller's
+   * reason and holds no reservation; shutdown rejects every waiter.
+   */
   async withProducer<T>(
-    kind: 'single' | 'comparison',
+    estimateBytes: number,
     ctx: Context,
-    run: (ctx: Context) => Promise<T>,
+    run: (ctx: Context, lease: ProducerLease) => Promise<T>,
   ): Promise<T> {
     this.assertRunning();
     ctx.signal.throwIfAborted();
-    const bytes =
-      (kind === 'comparison' ? POWER_LIMITS.comparisonBodyBytes : POWER_LIMITS.bodyBytes) +
-      POWER_LIMITS.rowBytes;
+    const tenant = this.tenant(ctx);
+    const entered = this.now();
+    const deadline = new AbortController();
+    const timer = setTimeout(
+      () => deadline.abort(new DOMException('The operation timed out.', 'TimeoutError')),
+      POWER_LIMITS.deadlineMs,
+    );
+    let producer: Producer | undefined;
+    try {
+      producer = await this.admit(tenant, estimateBytes, ctx.signal);
+      const admitted = producer;
+      const signal = AbortSignal.any([
+        ctx.signal,
+        admitted.controller.signal,
+        this.shutdownController.signal,
+        deadline.signal,
+      ]);
+      const measured = { body: 0, rows: 0 };
+      const grow = () => {
+        const total = measured.body + measured.rows;
+        if (total <= admitted.bytes) return;
+        const others = [...this.producers].filter((item) => item !== admitted);
+        const sum = (items: Producer[]) => items.reduce((acc, item) => acc + item.bytes, 0);
+        if (
+          sum(others) + total > POWER_LIMITS.processInflightBytes ||
+          sum(others.filter((item) => item.tenant === admitted.tenant)) + total >
+            POWER_LIMITS.tenantInflightBytes
+        ) {
+          const error = canvasError(
+            'producer_capacity_exhausted',
+            'This data call outgrew its in-flight reservation while other data calls hold the remaining capacity.',
+          );
+          admitted.controller.abort(error);
+          throw error;
+        }
+        admitted.bytes = total;
+      };
+      return await run(
+        { ...ctx, signal },
+        {
+          remainingMs: () => Math.max(0, entered + POWER_LIMITS.deadlineMs - this.now()),
+          bodyBytes: (total) => {
+            measured.body = total;
+            grow();
+          },
+          rowBytes: (total) => {
+            measured.rows = total;
+            grow();
+          },
+        },
+      );
+    } finally {
+      clearTimeout(timer);
+      if (producer) {
+        this.producers.delete(producer);
+        producer.finish();
+        this.admitWaiters();
+      }
+    }
+  }
+
+  /** Reserve atomically when both counts and byte ceilings allow it; otherwise nothing changes. */
+  private tryAdmit(tenant: string, bytes: number): Producer | undefined {
     const active = [...this.producers];
-    const total = active.reduce((sum, p) => sum + p.bytes, 0);
-    const tenant = active
-      .filter((p) => p.tenant === ctx.tenantId)
-      .reduce((sum, p) => sum + p.bytes, 0);
+    const total = active.reduce((sum, item) => sum + item.bytes, 0);
+    const owned = active
+      .filter((item) => item.tenant === tenant)
+      .reduce((sum, item) => sum + item.bytes, 0);
     if (
       active.length >= POWER_LIMITS.producers ||
       total + bytes > POWER_LIMITS.processInflightBytes ||
-      tenant + bytes > POWER_LIMITS.tenantInflightBytes
+      owned + bytes > POWER_LIMITS.tenantInflightBytes
     )
-      throw canvasError(
-        'canvas_capacity_exhausted',
-        'Producer memory or concurrency capacity is exhausted.',
-      );
-    const controller = new AbortController();
-    const signal = AbortSignal.any([
-      ctx.signal,
-      controller.signal,
-      this.shutdownController.signal,
-      AbortSignal.timeout(POWER_LIMITS.deadlineMs),
-    ]);
+      return undefined;
     const { promise: settled, resolve: finish } = Promise.withResolvers<void>();
     const producer: Producer = {
-      tenant: this.tenant(ctx),
+      tenant,
       bytes,
-      controller,
+      controller: new AbortController(),
       settled,
+      finish,
     };
     this.producers.add(producer);
-    try {
-      return await run({ ...ctx, signal });
-    } finally {
-      this.producers.delete(producer);
-      finish();
+    return producer;
+  }
+
+  /** Admit at once, or queue until capacity frees, the caller aborts, the wait ends, or shutdown. */
+  private admit(tenant: string, bytes: number, signal: AbortSignal): Promise<Producer> {
+    const head = this.waiters[0];
+    const immediate =
+      !head || !this.overtakeClosed(head) ? this.tryAdmit(tenant, bytes) : undefined;
+    if (immediate) return Promise.resolve(immediate);
+    return new Promise<Producer>((resolve, reject) => {
+      const settle = () => {
+        clearTimeout(timer);
+        signal.removeEventListener('abort', onAbort);
+        this.waiters.splice(this.waiters.indexOf(waiter), 1);
+      };
+      const waiter: Waiter = {
+        tenant,
+        bytes,
+        since: this.now(),
+        admit: (producer) => {
+          settle();
+          resolve(producer);
+        },
+        refuse: (error) => {
+          settle();
+          reject(error);
+        },
+      };
+      /** A waiter that leaves may have been the head holding later calls that already fit. */
+      const leave = (error: unknown) => {
+        waiter.refuse(error);
+        this.admitWaiters();
+      };
+      const onAbort = () => leave(signal.reason);
+      const timer = setTimeout(
+        () =>
+          leave(
+            canvasError(
+              'producer_capacity_exhausted',
+              'Other data calls held the producer capacity for the whole admission wait.',
+            ),
+          ),
+        POWER_LIMITS.queueWaitMs,
+      );
+      signal.addEventListener('abort', onAbort, { once: true });
+      this.waiters.push(waiter);
+    });
+  }
+
+  /** Whether a waiter has waited long enough that later calls may no longer overtake it. */
+  private overtakeClosed(waiter: Waiter): boolean {
+    return this.now() - waiter.since >= POWER_LIMITS.queueOvertakeMs;
+  }
+
+  /**
+   * Release and waiter-exit path: admit each queued call, in arrival order, that now fits,
+   * stopping at a waiter that does not fit once later calls may no longer overtake it.
+   */
+  private admitWaiters() {
+    for (const waiter of [...this.waiters]) {
+      const producer = this.tryAdmit(waiter.tenant, waiter.bytes);
+      if (producer) waiter.admit(producer);
+      else if (this.overtakeClosed(waiter)) return;
     }
   }
 
   /** Stage comparison summaries with observations only when the scientific envelope overflows. */
-  presentComparison<T extends ComparisonDataset>(
+  presentComparison<T extends ComparisonDataset & ComparisonShape>(
     dataset: T,
     canvasId: string | undefined,
     ctx: Context,
     sourceTool: string,
+    lease?: ProducerLease,
   ) {
+    const options = { lease, split: comparisonSplit(dataset) };
     if (this.fits({ ...dataset, rows: [], rowCount: dataset.rows.length, dataset: null }))
-      return this.present(dataset, canvasId, ctx, sourceTool);
+      return this.present(dataset, canvasId, ctx, sourceTool, options);
     const summaryRows = {
       buckets: dataset.summaries.map((summary, summaryIndex) => ({ ...summary, summaryIndex })),
       locations: dataset.locations
@@ -177,18 +338,20 @@ export class CanvasService {
         summaryCount: location.summaries.length,
       })),
     };
-    return this.present(compact, canvasId, ctx, sourceTool, tables);
+    return this.present(compact, canvasId, ctx, sourceTool, options, tables);
   }
 
   /** Stage complete cross-cell summaries when the no-observation regional envelope overflows. */
-  presentRegion<T extends RegionalSummaryDataset>(
+  presentRegion<T extends RegionalSummaryDataset & RegionShape>(
     dataset: T,
     canvasId: string | undefined,
     ctx: Context,
     sourceTool: string,
+    lease?: ProducerLease,
   ) {
+    const options = { lease, split: regionSplit(dataset) };
     if (this.fits({ ...dataset, rows: [], rowCount: dataset.rows.length, dataset: null }))
-      return this.present(dataset, canvasId, ctx, sourceTool);
+      return this.present(dataset, canvasId, ctx, sourceTool, options);
     const summaries = this.summaryTable(
       'regional',
       dataset.summaries.map((summary, summaryIndex) => ({ ...summary, summaryIndex })),
@@ -202,6 +365,7 @@ export class CanvasService {
       canvasId,
       ctx,
       sourceTool,
+      options,
       [summaries],
     );
   }
@@ -246,6 +410,7 @@ export class CanvasService {
     canvasId: string | undefined,
     ctx: Context,
     sourceTool: string,
+    options: PresentOptions = {},
     related: SummaryTable[] = [],
   ): Promise<PresentedDataset<T>> {
     this.assertRunning();
@@ -266,6 +431,7 @@ export class CanvasService {
         'dataset_limit',
         'Normalized dataset exceeds the analytical workload limit.',
       );
+    options.lease?.rowBytes(bytes + relatedBytes);
     const inline = { ...dataset, rowCount: dataset.rows.length, dataset: null };
     if (!related.length && this.fits(inline)) return inline;
     if (!this.fits({ ...inline, rows: [] }))
@@ -330,11 +496,16 @@ export class CanvasService {
       output('0000000000', new Date(this.now()).toISOString(), rows),
     );
     const canvas = this.canvas;
-    if (!canvas)
+    if (!canvas) {
+      const rowCount = dataset.rows.length;
+      const split = (options.split ?? prefixSplit(dataset))((output) => this.fits(output));
       throw canvasError(
         'canvas_required',
         'This complete dataset requires an analytical workspace.',
+        splitRecovery(rowCount, split),
+        { rowCount, inlineRows: split.inlineRows, calls: split.calls },
       );
+    }
     await this.reconcile();
     ctx.signal.throwIfAborted();
     const record = this.reserve(canvasId, ctx, table, bytes, columns, dataset, sourceTool, related);
@@ -463,7 +634,7 @@ export class CanvasService {
         ? 'The effective row limit is 1000; larger requested limits are capped.'
         : undefined;
     if (this.queryCount >= POWER_LIMITS.queries)
-      throw canvasError('canvas_capacity_exhausted', 'Analytical query concurrency is exhausted.');
+      throw canvasError('canvas_busy', 'Analytical query concurrency is exhausted.');
     this.queryCount++;
     try {
       return await this.operate(canvasId, ctx, async (instance) => {
@@ -532,6 +703,10 @@ export class CanvasService {
     this.stopped = true;
     clearInterval(this.timer);
     this.shutdownController.abort();
+    for (const waiter of [...this.waiters])
+      waiter.refuse(
+        new McpError(JsonRpcErrorCode.ServiceUnavailable, 'Analytical workspace is shutting down.'),
+      );
     for (const producer of this.producers) producer.controller.abort();
     await Promise.allSettled([...this.producers].map((producer) => producer.settled));
     await Promise.allSettled([...this.operations]);
@@ -664,11 +839,12 @@ export class CanvasService {
           ? 'Reuse an explicit live canvas_id, drop all tables from a canvas, or wait for canvas expiry.'
           : 'Reuse an explicit live canvas_id, or wait for canvas expiry.',
       );
+    if (record?.busy)
+      throw canvasError('canvas_busy', 'Another operation is active on this canvas.');
     if (
       retained(records) + bytes + relatedBytes > POWER_LIMITS.processRetainedBytes ||
       retained(tenantRecords) + bytes + relatedBytes > POWER_LIMITS.tenantRetainedBytes ||
-      (record &&
-        (record.busy || record.tables.size + 1 + related.length > POWER_LIMITS.tablesPerCanvas))
+      (record && record.tables.size + 1 + related.length > POWER_LIMITS.tablesPerCanvas)
     )
       throw canvasError(
         'canvas_capacity_exhausted',
@@ -826,7 +1002,7 @@ export class CanvasService {
         drop ? 'The canvas has expired or is absent; there is nothing left to remove.' : undefined,
       );
     if (record.busy)
-      throw canvasError('canvas_capacity_exhausted', 'Another operation is active on this canvas.');
+      throw canvasError('canvas_busy', 'Another operation is active on this canvas.');
     record.busy = true;
     const operation = (async () => {
       try {

@@ -50,11 +50,10 @@ export const dataframeQueryTool = tool('nasa_power_dataframe_query', {
       thrownBy: 'service',
     },
     {
-      reason: 'canvas_capacity_exhausted',
+      reason: 'canvas_busy',
       code: JsonRpcErrorCode.RateLimited,
-      when: 'Canvas or process query capacity is exhausted',
-      recovery:
-        'Reuse a canvas_id already returned to you, or wait for staged tables to expire before retrying.',
+      when: 'Another operation occupies this canvas, or the process query pool is full',
+      recovery: 'A query or operation is already in flight; retry this call when it returns.',
       retryable: true,
       thrownBy: 'service',
     },
