@@ -26,6 +26,7 @@ import {
   RegionRequestSchema,
   type Resolution,
 } from './types.js';
+import { unservedParameters } from './unserved-parameters.js';
 
 /** One producing operation owns this shared attempt/decoded-byte budget. */
 export type PowerCallBudget = {
@@ -35,7 +36,10 @@ export type PowerCallBudget = {
   readonly maxBodyBytes: number;
   readonly comparison: boolean;
   attempts: number;
+  /** Body bytes decoded by every attempt, discarded ones included; the comparison ceiling bounds it. */
   decodedBytes: number;
+  /** Body bytes of the responses the call still holds; a failed attempt's body leaves it at once. */
+  heldBytes: number;
 };
 /** Injection boundaries for offline fixtures and deterministic access timestamps. */
 export type PowerServiceOptions = {
@@ -76,20 +80,36 @@ export class PowerService {
     this.now = options.now ?? Date.now;
     this.config = options.config ?? getServerConfig();
   }
-  /** Start before dictionaries/configuration, then pass the same object through all locations and canvas presentation. */
-  createCallBudget(ctx: Context, comparison = false): PowerCallBudget {
+  /**
+   * Start before dictionaries/configuration, then pass the same object through all locations and
+   * canvas presentation. `deadlineMs` is what remains of a deadline that started earlier (a
+   * producer's tool entry); it defaults to the full call deadline. `onHeldBytes` receives the body
+   * bytes the call holds after every streamed chunk, so a producer can grow its in-flight
+   * reservation, or abort the call, before the next chunk is read; it receives the lower total
+   * again when a failed attempt's body is released, before any retry reads.
+   */
+  createCallBudget(
+    ctx: Context,
+    comparison = false,
+    options: { deadlineMs?: number; onHeldBytes?: (total: number) => void } = {},
+  ): PowerCallBudget {
+    const deadlineMs = options.deadlineMs ?? POWER_LIMITS.deadlineMs;
+    let heldBytes = 0;
     return {
-      deadlineAt: this.now() + POWER_LIMITS.deadlineMs,
-      signal: AbortSignal.any([
-        ctx.signal,
-        this.shutdown.signal,
-        AbortSignal.timeout(POWER_LIMITS.deadlineMs),
-      ]),
+      deadlineAt: this.now() + deadlineMs,
+      signal: AbortSignal.any([ctx.signal, this.shutdown.signal, AbortSignal.timeout(deadlineMs)]),
       maxAttempts: comparison ? POWER_LIMITS.comparisonAttempts : 6,
       maxBodyBytes: comparison ? POWER_LIMITS.comparisonBodyBytes : POWER_LIMITS.bodyBytes,
       comparison,
       attempts: 0,
       decodedBytes: 0,
+      get heldBytes() {
+        return heldBytes;
+      },
+      set heldBytes(total: number) {
+        heldBytes = total;
+        options.onHeldBytes?.(total);
+      },
     };
   }
   /** Abort owned work, remove queued callers, and release bounded cached payloads. */
@@ -142,6 +162,7 @@ export class PowerService {
     });
     this.cacheBytes += bytes;
   }
+  /** Stream one body under the byte bounds; a body that fails to read leaves `heldBytes` again. */
   private async body(
     response: Response,
     signal: AbortSignal,
@@ -164,6 +185,7 @@ export class PowerService {
         if (next.done) break;
         bytes += next.value.byteLength;
         budget.decodedBytes += next.value.byteLength;
+        budget.heldBytes += next.value.byteLength;
         if (
           bytes > POWER_LIMITS.bodyBytes ||
           (budget.comparison && budget.decodedBytes > budget.maxBodyBytes)
@@ -183,10 +205,71 @@ export class PowerService {
         throw shapeError('NASA POWER returned invalid UTF-8.');
       }
       return { text, bytes };
+    } catch (error) {
+      budget.heldBytes -= bytes;
+      throw error;
     } finally {
       signal.removeEventListener('abort', abort);
       reader.releaseLock();
     }
+  }
+  /** Classify a non-2xx or non-JSON body, or parse a JSON body against `schema`. */
+  private decode<T>(response: Response, text: string, schema: z.ZodType<T>): T {
+    if (!response.ok) {
+      let diagnostics: unknown;
+      try {
+        diagnostics = JSON.parse(text);
+      } catch {
+        diagnostics = text.slice(0, 4_096);
+      }
+      const messages =
+        diagnostics &&
+        typeof diagnostics === 'object' &&
+        'messages' in diagnostics &&
+        Array.isArray(diagnostics.messages)
+          ? diagnostics.messages
+              .filter((message) => typeof message === 'string')
+              .map((message) => message.slice(0, 2_048))
+              .slice(0, 20)
+          : [text.slice(0, 4_096)];
+      const data = { status: response.status, messages };
+      if (response.status === 429)
+        throw powerError('upstream_rate_limited', 'NASA POWER rate limited this request.', {
+          ...data,
+          retryAfter: response.headers.get('retry-after') ?? '2',
+        });
+      if (response.status === 422 || response.status === 400)
+        throw powerError('upstream_rejected', 'NASA POWER rejected the request.', data);
+      const code =
+        response.status === 401
+          ? JsonRpcErrorCode.Unauthorized
+          : response.status === 403
+            ? JsonRpcErrorCode.Forbidden
+            : response.status === 404
+              ? JsonRpcErrorCode.NotFound
+              : [408, 425, 504].includes(response.status)
+                ? JsonRpcErrorCode.Timeout
+                : response.status >= 500
+                  ? JsonRpcErrorCode.ServiceUnavailable
+                  : JsonRpcErrorCode.ValidationError;
+      throw new McpError(
+        code,
+        describePowerError(`NASA POWER HTTP ${response.status}.`, data),
+        data,
+      );
+    }
+    if (/^\s*<(?:!doctype\s+html|html[\s>])/i.test(text))
+      throw new McpError(
+        JsonRpcErrorCode.ServiceUnavailable,
+        'NASA POWER returned an HTML error page.',
+      );
+    let raw: unknown;
+    try {
+      raw = JSON.parse(text);
+    } catch {
+      throw shapeError('NASA POWER returned malformed JSON.');
+    }
+    return parse(schema, raw);
   }
   private async load<T>(
     url: URL,
@@ -246,64 +329,16 @@ export class PowerService {
                 );
               }
               const { text, bytes } = await this.body(response, attemptSignal, budget);
-              this.remaining(budget);
-              if (!response.ok) {
-                let diagnostics: unknown;
-                try {
-                  diagnostics = JSON.parse(text);
-                } catch {
-                  diagnostics = text.slice(0, 4_096);
-                }
-                const messages =
-                  diagnostics &&
-                  typeof diagnostics === 'object' &&
-                  'messages' in diagnostics &&
-                  Array.isArray(diagnostics.messages)
-                    ? diagnostics.messages
-                        .filter((message) => typeof message === 'string')
-                        .map((message) => message.slice(0, 2_048))
-                        .slice(0, 20)
-                    : [text.slice(0, 4_096)];
-                const data = { status: response.status, messages };
-                if (response.status === 429)
-                  throw powerError(
-                    'upstream_rate_limited',
-                    'NASA POWER rate limited this request.',
-                    { ...data, retryAfter: response.headers.get('retry-after') ?? '2' },
-                  );
-                if (response.status === 422 || response.status === 400)
-                  throw powerError('upstream_rejected', 'NASA POWER rejected the request.', data);
-                const code =
-                  response.status === 401
-                    ? JsonRpcErrorCode.Unauthorized
-                    : response.status === 403
-                      ? JsonRpcErrorCode.Forbidden
-                      : response.status === 404
-                        ? JsonRpcErrorCode.NotFound
-                        : [408, 425, 504].includes(response.status)
-                          ? JsonRpcErrorCode.Timeout
-                          : response.status >= 500
-                            ? JsonRpcErrorCode.ServiceUnavailable
-                            : JsonRpcErrorCode.ValidationError;
-                throw new McpError(
-                  code,
-                  describePowerError(`NASA POWER HTTP ${response.status}.`, data),
-                  data,
-                );
-              }
-              if (/^\s*<(?:!doctype\s+html|html[\s>])/i.test(text))
-                throw new McpError(
-                  JsonRpcErrorCode.ServiceUnavailable,
-                  'NASA POWER returned an HTML error page.',
-                );
-              let raw: unknown;
+              let value: T;
               try {
-                raw = JSON.parse(text);
-              } catch {
-                throw shapeError('NASA POWER returned malformed JSON.');
+                this.remaining(budget);
+                value = this.decode(response, text, schema);
+                this.remaining(budget);
+              } catch (error) {
+                /** A failed attempt's body is discarded, so the call no longer holds it. */
+                budget.heldBytes -= bytes;
+                throw error;
               }
-              const value = parse(schema, raw);
-              this.remaining(budget);
               const fetchedAt = new Date(this.now()).toISOString();
               this.store(key, value, fetchedAt, bytes, ttl);
               ctx.log.debug('NASA POWER response received', { bytes, cacheHit: false });
@@ -473,6 +508,13 @@ export class PowerService {
             hint: `Reduce the selection to at most ${parameterLimit} effective codes, including any added PSC and WSC corrections, then retry.`,
           },
         },
+      );
+    const unserved = unservedParameters(codes, request.temporalResolution);
+    if (unserved)
+      throw powerError(
+        'unsupported_parameter',
+        `NASA POWER lists ${unserved.parameters.join(', ')} for ${request.temporalResolution} but does not serve ${unserved.parameters.length === 1 ? 'it' : 'them'} at that resolution.`,
+        { parameters: unserved.parameters, recovery: { hint: unserved.recovery } },
       );
     const dictionary = await this.dictionary(
       request.community,

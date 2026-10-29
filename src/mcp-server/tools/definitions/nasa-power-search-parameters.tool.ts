@@ -9,6 +9,7 @@ import {
   REFERENCE_LIMIT_RECOVERY,
   ResolutionSchema,
 } from '@/services/power/index.js';
+import { unservedParameters } from '@/services/power/unserved-parameters.js';
 
 const SearchEntrySchema = DictionaryEntrySchema.extend({
   code: z.string().describe('Exact source parameter code'),
@@ -18,7 +19,7 @@ const SearchEntrySchema = DictionaryEntrySchema.extend({
 export const searchParametersTool = tool('nasa_power_search_parameters', {
   title: 'Search NASA POWER parameters',
   description:
-    'Find parameter codes supported by a community and temporalResolution. Every whitespace-separated filter token must match code, name or definition, ignoring case. Filtering covers the complete dictionary before sorted pagination. Blank filter browses all codes; pass returned codes to a producing tool.',
+    'Find parameter codes supported by a community and temporalResolution. Every whitespace-separated filter token must match code, name or definition, ignoring case. Filtering covers the complete dictionary before sorted pagination. Codes NASA lists but does not serve at that resolution are left out, and a notice names any the filter matched. Blank filter browses all codes; pass returned codes to a producing tool.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   input: z.strictObject({
     community: CommunitySchema.default('RE'),
@@ -47,7 +48,11 @@ export const searchParametersTool = tool('nasa_power_search_parameters', {
     filter: z.string().describe('Effective local token filter'),
     offset: z.number().describe('Requested filtered offset'),
     limit: z.number().describe('Effective maximum entry count, capped at 100'),
-    total: z.number().describe('Total matches across the complete dictionary'),
+    total: z
+      .number()
+      .describe(
+        'Total matches across the complete dictionary, excluding codes NASA does not serve',
+      ),
     hasMore: z.boolean().describe('Whether another filtered page follows'),
     truncated: z.boolean().describe('Whether matching entries remain after this page'),
     entries: z
@@ -58,7 +63,9 @@ export const searchParametersTool = tool('nasa_power_search_parameters', {
     notice: z
       .string()
       .optional()
-      .describe('Effective output cap or guidance when the complete filter has no matches'),
+      .describe(
+        'Effective output cap, matched codes left out because NASA does not serve them at this resolution, or guidance when the complete filter has no matches',
+      ),
   },
   errors: [
     {
@@ -102,7 +109,7 @@ export const searchParametersTool = tool('nasa_power_search_parameters', {
       ctx,
     );
     const tokens = input.filter.toLowerCase().split(/\s+/).filter(Boolean);
-    const matches = Object.entries(dictionary)
+    const filtered = Object.entries(dictionary)
       .filter(([code, entry]) => {
         const text = [code, entry.name, entry.definition]
           .filter((value) => value !== undefined)
@@ -111,11 +118,22 @@ export const searchParametersTool = tool('nasa_power_search_parameters', {
         return tokens.every((token) => text.includes(token));
       })
       .sort(([left], [right]) => left.localeCompare(right));
+    const unserved = unservedParameters(
+      filtered.map(([code]) => code),
+      input.temporalResolution,
+    );
+    const matches = unserved
+      ? filtered.filter(([code]) => !unserved.parameters.includes(code))
+      : filtered;
     ctx.signal.throwIfAborted();
     const notices: string[] = [];
     if (input.limit > limit)
       notices.push('The effective entry limit is 100; larger requested limits are capped.');
-    if (matches.length === 0)
+    if (unserved)
+      notices.push(
+        `Excluded ${unserved.parameters.join(', ')}: NASA lists ${unserved.parameters.length === 1 ? 'this code' : 'these codes'} for ${input.temporalResolution} but does not serve ${unserved.parameters.length === 1 ? 'it' : 'them'} at that resolution. ${unserved.recovery}`,
+      );
+    else if (matches.length === 0)
       notices.push(
         'No parameters matched this filter for the selected community and temporal resolution. Broaden filter or use nasa_power_list_reference topic presets.',
       );

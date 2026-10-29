@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { POWER_LIMITS } from '@/config/server-config.js';
 import { createPowerService, type PowerService } from '@/services/power/power-service.js';
 import { PowerRequestSchema, RegionRequestSchema } from '@/services/power/types.js';
+import { streamedBody } from '../../fake-power.js';
 
 const daily = (extra = {}) =>
   PowerRequestSchema.parse(
@@ -421,6 +422,72 @@ describe('PowerService HTTP contract', () => {
     expect(await outcome).toMatchObject({ data: { reason: 'dataset_limit' } });
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
+  describe('held body bytes across a retried load', () => {
+    const MiB = 1024 * 1024;
+    /** Cold dictionary and configuration bodies the call holds before its data body. */
+    const referenceBytes =
+      JSON.stringify(dictionary).length +
+      JSON.stringify({ settings: { start: '1981-01-01' } }).length;
+    /** The point payload padded with trailing whitespace to `bytes`. */
+    const padded = (bytes: number) => {
+      const json = JSON.stringify(point);
+      return new Response(json + ' '.repeat(bytes - json.length));
+    };
+    /** Every held-byte total one cold point call reports, its data load optionally failing once. */
+    async function reported(failFirst?: () => Response) {
+      let failed = !failFirst;
+      const totals: number[] = [];
+      const instance = service(
+        vi.fn<typeof fetch>(async (url) => {
+          if (!String(url).includes('/point?')) return respond(url);
+          if (failed) return padded(8 * MiB);
+          failed = true;
+          return failFirst!();
+        }),
+      );
+      const ctx = createMockContext();
+      const budget = instance.createCallBudget(ctx, false, {
+        onHeldBytes: (total) => totals.push(total),
+      });
+      const pending = instance.point(daily(), ctx, budget);
+      await vi.advanceTimersByTimeAsync(10_000);
+      await pending;
+      return totals;
+    }
+    it.each([
+      ['fails partway through its body', () => streamedBody(6 * MiB, 'error')],
+      ['answers 503 with a whole body', () => streamedBody(6 * MiB, { status: 503 })],
+    ])('releases the body of an attempt that %s before the retry counts', async (_shape, fail) => {
+      const once = await reported();
+      const retried = await reported(fail);
+      /** The failed body was counted while it was held… */
+      expect(retried).toContain(referenceBytes + 6 * MiB);
+      /** …and left the count, so the retried call peaks and ends where a first-time success does. */
+      expect(Math.max(...retried)).toBe(Math.max(...once));
+      expect(retried.at(-1)).toBe(referenceBytes + 8 * MiB);
+      expect(once.at(-1)).toBe(referenceBytes + 8 * MiB);
+    });
+    it("counts every attempt's body, discarded ones included, against the comparison ceiling", async () => {
+      let data = 0;
+      const instance = service(
+        vi.fn<typeof fetch>(async (url) => {
+          if (!String(url).includes('/point?')) return respond(url);
+          data++;
+          return data === 1 ? streamedBody(15 * MiB, 'error') : padded((data === 2 ? 15 : 3) * MiB);
+        }),
+      );
+      const ctx = createMockContext();
+      const budget = instance.createCallBudget(ctx, true);
+      const first = instance.point(daily({ latitude: 1 }), ctx, budget);
+      await vi.advanceTimersByTimeAsync(10_000);
+      await first;
+      const second = instance.point(daily({ latitude: 2 }), ctx, budget).catch((error) => error);
+      await vi.advanceTimersByTimeAsync(5_000);
+      /** 15 + 15 + 3 MiB decoded passes the 32 MiB ceiling though only 18 MiB is held. */
+      expect(await second).toMatchObject({ data: { reason: 'dataset_limit' } });
+      expect(data).toBe(3);
+    });
+  });
   it('refuses work beyond the shared overall deadline before HTTP starts', async () => {
     const fetcher = vi.fn<typeof fetch>(async (url) => respond(url));
     const instance = service(fetcher);
@@ -451,5 +518,173 @@ describe('PowerService HTTP contract', () => {
     instance.dispose();
     await Promise.all(calls);
     expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('codes POWER lists but does not serve at a resolution', () => {
+  /** The dictionary codes that answered HTTP 500 at each resolution in AG, RE and SB (2026-10-28 sweep). */
+  const unserved = {
+    monthly: [
+      'GDD4_4',
+      'GDD7_2',
+      'GDD10',
+      'GDD13_3',
+      'GDD15_6',
+      'ALLSKY_SFC_SW_DIFF_HR_MAX',
+      'ALLSKY_SFC_SW_DIFF_HR_MIN',
+      'ALLSKY_SFC_SW_DNI_HR_MAX',
+      'ALLSKY_SFC_SW_DNI_HR_MIN',
+      'ALLSKY_SFC_SW_DWN_HR_MAX',
+      'ALLSKY_SFC_SW_DWN_HR_MIN',
+    ],
+    climatology: ['GDD4_4', 'GDD7_2', 'GDD10', 'GDD13_3', 'GDD15_6'],
+  };
+  const listed = [
+    ...new Set([
+      ...unserved.monthly,
+      'T2M',
+      'HDD18_3',
+      'CDD18_3',
+      'ALLSKY_SFC_SW_DWN_HR',
+      'SI_TRACKER_AVG',
+    ]),
+  ];
+  /** POWER's dictionary lists every code at every non-hourly resolution; its data endpoints answer 500. */
+  const listing = vi.fn<typeof fetch>(async (url) => {
+    const path = String(url);
+    if (path.includes('/parameters?'))
+      return Response.json(Object.fromEntries(listed.map((code) => [code, {}])));
+    if (path.endsWith('/configuration')) return Response.json({});
+    return Response.json({ header: 'Server Side Error' }, { status: 500 });
+  });
+  const windows = {
+    daily: { startDate: '2023-06-01', endDate: '2023-06-03' },
+    monthly: { startDate: undefined, endDate: undefined, startYear: 2023, endYear: 2023 },
+    climatology: { startDate: undefined, endDate: undefined },
+  } as const;
+  const at = (resolution: keyof typeof windows, parameters: string[]) =>
+    daily({
+      temporalResolution: resolution,
+      ...windows[resolution],
+      selection: { mode: 'parameters', parameters },
+    });
+  const regionAt = (resolution: 'daily' | 'monthly' | 'climatology', parameter: string) =>
+    RegionRequestSchema.parse({
+      temporalResolution: resolution,
+      latitudeMin: 40,
+      latitudeMax: 42,
+      longitudeMin: -95,
+      longitudeMax: -93,
+      parameter,
+      ...(resolution === 'daily'
+        ? windows.daily
+        : resolution === 'monthly'
+          ? { startYear: 2023, endYear: 2023 }
+          : {}),
+    });
+  /** A climatology has no dates, so the GDD recovery names the window it can request at daily. */
+  const familyHint = (code: string) =>
+    code.startsWith('GDD')
+      ? 'Growing degree day codes (GDD4_4, GDD7_2, GDD10, GDD13_3, GDD15_6) are served only at daily resolution: request the window at daily (for a climatology, its start and end years) and sum the daily values for each month, season or year, averaging those sums across years for a climatological value.'
+      : expect.stringMatching(/_HR_MAX.*climatology/);
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-19T00:00:00Z'));
+    listing.mockClear();
+  });
+  afterEach(() => {
+    for (const instance of services) instance.dispose();
+    services = [];
+    vi.useRealTimers();
+  });
+
+  it.each(
+    Object.entries(unserved).flatMap(([resolution, codes]) =>
+      codes.map((code) => [resolution as 'monthly' | 'climatology', code] as const),
+    ),
+  )('rejects %s %s with its family recovery before any request', async (resolution, code) => {
+    const outcome = service(listing)
+      .point(at(resolution, [code]), createMockContext())
+      .catch((error) => error);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(await outcome).toMatchObject({
+      data: {
+        reason: 'unsupported_parameter',
+        parameters: [code],
+        recovery: { hint: familyHint(code) },
+      },
+      message: expect.stringContaining(code),
+    });
+    expect(listing).not.toHaveBeenCalled();
+  });
+
+  it('names only the unserved codes of a mixed selection and joins both family recoveries', async () => {
+    const pending = service(listing)
+      .point(
+        at('monthly', ['T2M', 'GDD10', 'ALLSKY_SFC_SW_DWN_HR_MAX', 'HDD18_3']),
+        createMockContext(),
+      )
+      .catch((error) => error);
+    await vi.advanceTimersByTimeAsync(30_000);
+    const outcome = await pending;
+    expect(outcome).toMatchObject({
+      data: {
+        reason: 'unsupported_parameter',
+        parameters: ['GDD10', 'ALLSKY_SFC_SW_DWN_HR_MAX'],
+        recovery: {
+          hint: expect.stringMatching(/Growing degree day.*daily.*_HR_MAX.*climatology/s),
+        },
+      },
+    });
+    expect(outcome.message).not.toContain('T2M');
+    expect(listing).not.toHaveBeenCalled();
+  });
+
+  it.each(['monthly', 'climatology'] as const)(
+    'rejects a %s region of GDD10 before any request',
+    async (resolution) => {
+      const outcome = service(listing)
+        .region(regionAt(resolution, 'GDD10'), createMockContext())
+        .catch((error) => error);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(await outcome).toMatchObject({
+        data: {
+          reason: 'unsupported_parameter',
+          parameters: ['GDD10'],
+          recovery: { hint: familyHint('GDD10') },
+        },
+      });
+      expect(listing).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ['daily', ['GDD4_4', 'GDD7_2', 'GDD10', 'GDD13_3', 'GDD15_6']],
+    ['climatology', ['ALLSKY_SFC_SW_DWN_HR_MAX', 'ALLSKY_SFC_SW_DIFF_HR_MIN', 'SI_TRACKER_AVG']],
+    ['monthly', ['ALLSKY_SFC_SW_DWN_HR', 'T2M']],
+    ...(['daily', 'monthly', 'climatology'] as const).map(
+      (resolution) => [resolution, ['HDD18_3', 'CDD18_3']] as const,
+    ),
+  ] as const)(
+    'still validates served %s codes %j against the dictionary',
+    async (resolution, codes) => {
+      const instance = service(listing);
+      const pending = instance.validateRequest(at(resolution, [...codes]), createMockContext());
+      await vi.advanceTimersByTimeAsync(5000);
+      await expect(pending).resolves.toBeUndefined();
+      expect(listing.mock.calls.map(([url]) => new URL(String(url)).pathname)).toEqual([
+        '/api/system/manager/parameters',
+        `/api/temporal/${resolution}/configuration`,
+      ]);
+    },
+  );
+
+  it('still validates a daily region of GDD10', async () => {
+    const pending = service(listing).validateRequest(
+      regionAt('daily', 'GDD10'),
+      createMockContext(),
+    );
+    await vi.advanceTimersByTimeAsync(5000);
+    await expect(pending).resolves.toBeUndefined();
   });
 });
