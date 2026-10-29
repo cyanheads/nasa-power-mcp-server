@@ -2,7 +2,7 @@
 
 ## MCP surface
 
-All names have the `nasa_power_` prefix. No resources, prompts, or interactive apps are required: every workflow is available through tools.
+All names have the `nasa_power_` prefix. No resources, prompts, or interactive apps are required: every workflow is available through tools. The one published agent skill, `skills/nasa-power-guide/SKILL.md`, carries call-planning gates the tool descriptions don't (grid-cell size, freshness, rate versus total units, degree-day resolution, admission) and is served over the Skills extension.
 
 | Tool suffix | Capability | Main inputs | Annotations |
 |:--|:--|:--|:--|

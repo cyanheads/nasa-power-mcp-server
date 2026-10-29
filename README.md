@@ -7,7 +7,7 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-0.3.0-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/nasa-power-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.3.1-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/nasa-power-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/nasa-power-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.4.4-blueviolet.svg?style=flat-square)](https://bun.sh/)
+[![Version](https://img.shields.io/badge/Version-0.3.0-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/nasa-power-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.4.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/nasa-power-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/nasa-power-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun-v1.4.4-blueviolet.svg?style=flat-square)](https://bun.sh/)
 
 </div>
 
@@ -46,6 +46,14 @@
 | `nasa_power_dataframe_drop` | Opt-in removal of one named staged table |
 
 Eight tools are enabled by default; `NASA_POWER_DATAFRAME_DROP_ENABLED=true` enables the ninth.
+
+### Skills
+
+| Skill | Description |
+|:---|:---|
+| `nasa-power-guide` | Which tool answers a typical-month versus a dated question, grid-cell size, data freshness, rate versus total units, degree days, the one-data-call-at-a-time gate, and SQL over staged tables |
+
+The skill ships in `skills/nasa-power-guide/SKILL.md`. Plugin hosts load it from the package, and MCP clients that support the Skills extension read it from the server as `skill://nasa-power-guide/SKILL.md`.
 
 ## Capability reference
 
@@ -137,106 +145,32 @@ Staging requires DuckDB and supports at most 250,000 rows, 64 parameter columns 
 
 ## Getting started
 
-### Public Hosted Instance
+Connect to the hosted instance, no install:
 
-A public instance is available at `https://nasa-power.caseyjhand.com/mcp` — no installation required. Point any MCP client at it via Streamable HTTP:
-
-```json
-{
-  "mcpServers": {
-    "nasa-power-mcp-server": {
-      "type": "streamable-http",
-      "url": "https://nasa-power.caseyjhand.com/mcp"
-    }
-  }
-}
+```sh
+claude mcp add --transport http nasa-power-mcp-server https://nasa-power.caseyjhand.com/mcp
 ```
 
-### Self-Hosted / Local
+Or run it locally:
 
-Add the following to your MCP client configuration file.
-
-```json
-{
-  "mcpServers": {
-    "nasa-power-mcp-server": {
-      "type": "stdio",
-      "command": "bunx",
-      "args": ["@cyanheads/nasa-power-mcp-server@latest"],
-      "env": { "MCP_TRANSPORT_TYPE": "stdio" }
-    }
-  }
-}
+```sh
+claude mcp add nasa-power-mcp-server -- npx -y @cyanheads/nasa-power-mcp-server
 ```
 
-Or with npx (no Bun required):
+For other clients, add this to the MCP config file:
 
 ```json
 {
   "mcpServers": {
     "nasa-power-mcp-server": {
-      "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@cyanheads/nasa-power-mcp-server@latest"],
-      "env": { "MCP_TRANSPORT_TYPE": "stdio" }
+      "args": ["-y", "@cyanheads/nasa-power-mcp-server"]
     }
   }
 }
 ```
 
-Or with Docker:
-
-```json
-{
-  "mcpServers": {
-    "nasa-power-mcp-server": {
-      "type": "stdio",
-      "command": "docker",
-      "args": ["run", "-i", "--rm", "-e", "MCP_TRANSPORT_TYPE=stdio", "ghcr.io/cyanheads/nasa-power-mcp-server:latest"]
-    }
-  }
-}
-```
-
-For Streamable HTTP, set the transport and start the server:
-
-```sh
-MCP_TRANSPORT_TYPE=http MCP_HTTP_PORT=3010 bun run start:http
-# Server listens at http://127.0.0.1:3010/mcp
-```
-
-### Prerequisites
-
-- [Bun v1.4.0](https://bun.sh/) or higher (or Node.js v24+).
-- npm and Docker install native DuckDB dependencies normally on supported platforms, and staging and SQL are on by default. Set `CANVAS_PROVIDER_TYPE=none` to keep every result inline.
-- The portable Claude Desktop MCPB bundle fixes `CANVAS_PROVIDER_TYPE=none` and supports inline results. Narrow an oversized request or use npm/Docker for analytics.
-
-### Installation
-
-1. **Clone the repository:**
-
-```sh
-git clone https://github.com/cyanheads/nasa-power-mcp-server.git
-```
-
-2. **Navigate into the directory:**
-
-```sh
-cd nasa-power-mcp-server
-```
-
-3. **Install dependencies:**
-
-```sh
-bun install
-```
-
-4. **Configure environment:**
-
-```sh
-cp .env.example .env
-# edit .env to change transport, logging or canvas settings
-```
+npm and Docker installs stage large results in DuckDB for SQL by default; set `CANVAS_PROVIDER_TYPE=none` to keep every result inline. The Claude Desktop bundle is inline-only: narrow an oversized request, or use npm or Docker for analytics. No NASA account or API key is required. For Docker or a source build, see [Running the server](#running-the-server).
 
 ## Configuration
 
@@ -261,6 +195,16 @@ Unset, blank and whole-value placeholder settings retain these defaults. Invalid
 
 ### Local development
 
+Requires [Bun v1.4.0](https://bun.sh/) or higher (or Node.js v24+).
+
+- **Clone and install:**
+
+  ```sh
+  git clone https://github.com/cyanheads/nasa-power-mcp-server.git
+  cd nasa-power-mcp-server && bun install
+  cp .env.example .env   # optional: transport, logging or canvas settings
+  ```
+
 - **Build and run the production version**:
 
   ```sh
@@ -282,17 +226,17 @@ Unset, blank and whole-value placeholder settings retain these defaults. Invalid
 ### Docker
 
 ```sh
-docker build -t nasa-power-mcp-server .
-docker run --rm -p 127.0.0.1:3010:3010 nasa-power-mcp-server
+docker run --rm -p 127.0.0.1:3010:3010 ghcr.io/cyanheads/nasa-power-mcp-server:latest
 ```
 
-The image defaults to HTTP on port 3010 in stateless session mode and logs to `/var/log/nasa-power-mcp-server`. OpenTelemetry peer dependencies are installed by default; build with `--build-arg OTEL_ENABLED=false` to omit them. For a client outside loopback, configure authentication and TLS at the deployment boundary.
+The image defaults to HTTP on port 3010 in stateless session mode and logs to `/var/log/nasa-power-mcp-server`. To run it over stdio from an MCP client, use `"command": "docker"` with `"args": ["run", "-i", "--rm", "-e", "MCP_TRANSPORT_TYPE=stdio", "ghcr.io/cyanheads/nasa-power-mcp-server:latest"]`. To build locally, `docker build -t nasa-power-mcp-server .`; OpenTelemetry peer dependencies are installed by default — build with `--build-arg OTEL_ENABLED=false` to omit them. For a client outside loopback, configure authentication and TLS at the deployment boundary.
 
 ## Project structure
 
 | Path | Purpose |
 |:---|:---|
-| `src/index.ts` | Nine tool registrations, bounded canvas setup and service shutdown |
+| `src/index.ts` | Nine tool registrations, the published skill tree, bounded canvas setup and service shutdown |
+| `skills` | The `nasa-power-guide` agent skill, published to plugin hosts and served over MCP |
 | `src/config` | Workload limits and server-specific environment parsing |
 | `src/mcp-server/tools/definitions` | Tool contracts and comparison orchestration |
 | `src/services/power` | Paced NASA client, normalization, presets and scientific summaries |

@@ -12,6 +12,8 @@ let temporaryDirectory: string;
 beforeAll(() => {
   temporaryDirectory = mkdtempSync(join(tmpdir(), 'nasa-power-startup-'));
   symlinkSync(join(root, 'node_modules'), join(temporaryDirectory, 'node_modules'), 'dir');
+  // The bundled entry resolves `createApp({ skills: 'skills' })` against its own directory.
+  symlinkSync(join(root, 'skills'), join(temporaryDirectory, 'skills'), 'dir');
   const build = spawnSync(
     'bun',
     [
