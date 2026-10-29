@@ -11,12 +11,13 @@ import type { AppConfig } from '@cyanheads/mcp-ts-core/config';
 import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 import type { StorageService } from '@cyanheads/mcp-ts-core/storage';
 import { POWER_LIMITS, type ServerConfig } from '@/config/server-config.js';
-import { type ObservationRow, powerError } from '../power/index.js';
+import { type ObservationRow, type PowerDataset, powerError } from '../power/index.js';
 import { canvasError, safeCanvasError } from './errors.js';
 import { formatFaithfully } from './format.js';
 import {
   type ComparisonShape,
   comparisonSplit,
+  pointSplit,
   prefixSplit,
   type RegionShape,
   regionSplit,
@@ -35,7 +36,8 @@ import {
 } from './types.js';
 
 type SummaryTable = {
-  key: 'buckets' | 'locations' | 'regional';
+  /** `summaries` returns as `summaryDataset`; `buckets` and `locations` as `summaryDatasets`. */
+  key: 'buckets' | 'locations' | 'summaries';
   table: string;
   rows: Record<string, string | number | boolean | null | undefined>[];
   columns: ScientificColumn[];
@@ -349,11 +351,42 @@ export class CanvasService {
     sourceTool: string,
     lease?: ProducerLease,
   ) {
-    const options = { lease, split: regionSplit(dataset) };
+    return this.presentSummarized(dataset, canvasId, ctx, sourceTool, {
+      lease,
+      split: regionSplit(dataset),
+    });
+  }
+
+  /** Stage complete per-column summaries when the no-observation point envelope overflows. */
+  presentPoint<T extends PowerDataset>(
+    dataset: T,
+    canvasId: string | undefined,
+    ctx: Context,
+    sourceTool: string,
+    lease?: ProducerLease,
+  ) {
+    return this.presentSummarized(dataset, canvasId, ctx, sourceTool, {
+      lease,
+      split: pointSplit(dataset),
+    });
+  }
+
+  /**
+   * Present unchanged when the envelope without observations fits. Otherwise one summary stays
+   * inline beside the exact `summaryCount`, and the complete summaries stage as a related table
+   * ordered by `summaryIndex`. The split planner always sees the complete dataset.
+   */
+  private presentSummarized<T extends PresentableDataset & { summaries: SummaryTable['rows'] }>(
+    dataset: T,
+    canvasId: string | undefined,
+    ctx: Context,
+    sourceTool: string,
+    options: PresentOptions,
+  ) {
     if (this.fits({ ...dataset, rows: [], rowCount: dataset.rows.length, dataset: null }))
       return this.present(dataset, canvasId, ctx, sourceTool, options);
     const summaries = this.summaryTable(
-      'regional',
+      'summaries',
       dataset.summaries.map((summary, summaryIndex) => ({ ...summary, summaryIndex })),
     );
     return this.present(
@@ -457,15 +490,15 @@ export class CanvasService {
       queryTool: 'nasa_power_dataframe_query' as const,
     });
     const relatedHandles = (id: string, expiresAt: string) => {
-      const regional = related.find((item) => item.key === 'regional');
-      if (regional)
+      const summaries = related.find((item) => item.key === 'summaries');
+      if (summaries)
         return {
           summaryDataset: handle(
             id,
             expiresAt,
-            regional.table,
-            regional.rows.length,
-            regional.columns,
+            summaries.table,
+            summaries.rows.length,
+            summaries.columns,
           ),
         };
       const buckets = related.find((item) => item.key === 'buckets');

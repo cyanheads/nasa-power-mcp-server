@@ -9,7 +9,7 @@ import { PointOutputSchema, presentPoint } from './point-contracts.js';
 export const getClimatologyTool = tool('nasa_power_get_climatology', {
   title: 'Get NASA POWER climatology',
   description:
-    'Retrieve complete monthly and annual climatology at latitude/longitude. Optionally supply both startYear and endYear; omitted years use the source product range. Use nasa_power_list_reference for presets and tilted solar aliases. Small profiles remain inline; larger profiles return a complete table handle and bounded preview, preserving orientation text. Supply canvas_id to reuse a returned workspace.',
+    'Retrieve complete monthly and annual climatology at latitude/longitude. Optionally supply both startYear and endYear; omitted years use the source product range. Use nasa_power_list_reference for presets and tilted solar aliases. Small profiles remain inline; larger profiles return a complete table handle and bounded preview, preserving orientation text. Oversized summaries stage as summaryDataset with exact summaryCount, queried in summaryIndex order. Supply canvas_id to reuse a returned workspace.',
   annotations: { readOnlyHint: true, openWorldHint: true },
   input: PowerRequestSchema.options[3].omit({ temporalResolution: true }).extend({
     canvas_id: CanvasIdSchema.optional().describe(
@@ -25,7 +25,7 @@ export const getClimatologyTool = tool('nasa_power_get_climatology', {
     {
       reason: 'canvas_required',
       code: JsonRpcErrorCode.ConfigurationError,
-      when: 'Oversized observations require an enabled workspace',
+      when: 'Oversized observations or summaries require an enabled workspace',
       recovery:
         'Re-send the request as the calls listed in the error, each sized to fit inline, or use the npm or Docker distribution with CANVAS_PROVIDER_TYPE=duckdb.',
       thrownBy: 'service',

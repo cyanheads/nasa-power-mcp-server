@@ -1,4 +1,5 @@
 /** @fileoverview Point and discovery contracts through the real network and presentation seams. @module tests/mcp-server/tools/nasa-power-point-discovery */
+import { readFile } from 'node:fs/promises';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import {
   createInMemoryStorage,
@@ -14,7 +15,9 @@ import { listReferenceTool } from '@/mcp-server/tools/definitions/nasa-power-lis
 import { searchParametersTool } from '@/mcp-server/tools/definitions/nasa-power-search-parameters.tool.js';
 import { initCanvasService } from '@/services/canvas/index.js';
 import { initPowerService } from '@/services/power/index.js';
-import { PRESETS } from '@/services/power/presets.js';
+import { normalizePoint, PointPayloadSchema } from '@/services/power/normalize.js';
+import { aliasMembership, PRESETS } from '@/services/power/presets.js';
+import { PowerRequestSchema } from '@/services/power/types.js';
 import { fakePower, streamedBody } from '../../fake-power.js';
 import { markdownText } from '../../markdown-text.js';
 import { sizedRefusal } from '../../sized-refusal.js';
@@ -1089,6 +1092,99 @@ describe('point tool consumption contracts', () => {
       );
     },
   );
+
+  it('refuses a monthly year whose summaries overflow with parameter groups that re-send inline and cover every column and summary', async () => {
+    /** A live 2020 monthly capture: two hour-of-day groups beside eleven codes POWER serves monthly. */
+    const captured = JSON.parse(
+      await readFile(new URL('../../fixtures/hour-wide-monthly.json', import.meta.url), 'utf8'),
+    ) as {
+      properties: { parameter: Record<string, Record<string, number>> };
+      parameters: Record<string, object>;
+    };
+    const codes = [
+      'ALLSKY_SFC_SW_DWN_HR',
+      'ALLSKY_SFC_SW_DIFF_HR',
+      'T2M',
+      'RH2M',
+      'WS10M',
+      'PS',
+      'PRECTOTCORR',
+      'T2M_MAX',
+      'T2M_MIN',
+      'QV2M',
+      'WS50M',
+      'WD10M',
+      'T2MDEW',
+    ];
+    entries = { ...dictionary, ...Object.fromEntries(codes.map((code) => [code, {}])) };
+    source.dispose();
+    source = initPowerService({
+      fetch: async (url) => {
+        if (String(url).includes('/parameters?')) return Response.json(entries);
+        if (String(url).endsWith('/configuration'))
+          return Response.json({ settings: { start: '1981-01-01', end: '2025-12-31' } });
+        const requested = (new URL(String(url)).searchParams.get('parameters') ?? '').split(',');
+        const keep = <T>(record: Record<string, T>) =>
+          Object.fromEntries(
+            Object.entries(record).filter(([key]) =>
+              requested.some((code) => key === code || aliasMembership(code)?.(key) === true),
+            ),
+          );
+        return Response.json({
+          ...captured,
+          properties: { ...captured.properties, parameter: keep(captured.properties.parameter) },
+          parameters: keep(captured.parameters),
+        });
+      },
+      config: { maxCanvasesPerProcess: 8, dataframeDropEnabled: false },
+    });
+    const args = {
+      temporalResolution: 'monthly',
+      latitude: 41.9,
+      longitude: -93.6,
+      startYear: 2020,
+      endYear: 2020,
+      selection: { mode: 'parameters', parameters: codes },
+    };
+    /** Every summary the complete capture normalizes to; each column has a month and an annual kind. */
+    const expected = normalizePoint(
+      PointPayloadSchema.parse(captured),
+      PowerRequestSchema.parse(args),
+      {
+        endpointUrl: 'https://power.larc.nasa.gov/',
+        fetchedAt: '2026-10-19T00:00:00Z',
+        cacheHit: false,
+      },
+    ).summaries;
+    expect(expected).toHaveLength(2 * Object.keys(captured.properties.parameter).length);
+    const split = sizedRefusal(await settle(runRaw(getTimeseriesTool, args)), 13);
+    expect(split.inlineRows).toBe(13);
+    /** The two groups the server listed for this selection against live POWER. */
+    expect(split.calls).toEqual([
+      { selection: { mode: 'parameters', parameters: ['ALLSKY_SFC_SW_DWN_HR'] } },
+      { selection: { mode: 'parameters', parameters: codes.slice(1) } },
+    ]);
+    const columns: string[] = [];
+    const summaries: unknown[] = [];
+    for (const call of split.calls) {
+      const result = await settle(runRaw(getTimeseriesTool, { ...args, ...call }));
+      expect(result.isError).not.toBe(true);
+      expect(JSON.stringify(result.structuredContent).length).toBeLessThanOrEqual(40000);
+      expect(text(result).length).toBeLessThanOrEqual(40000);
+      const output = getTimeseriesTool.output.parse(result.structuredContent);
+      expect(output).toMatchObject({ rowCount: 13, dataset: null });
+      expect(output.rows).toHaveLength(13);
+      expect(output.summaryCount).toBeUndefined();
+      columns.push(...output.parameters.map((parameter) => parameter.code));
+      summaries.push(...output.summaries);
+    }
+    expect(columns.sort()).toEqual(Object.keys(captured.properties.parameter).sort());
+    const order = (items: unknown[]) =>
+      (items as { parameter: string; periodKind: string }[]).toSorted((a, b) =>
+        `${a.parameter} ${a.periodKind}`.localeCompare(`${b.parameter} ${b.periodKind}`),
+      );
+    expect(order(summaries)).toEqual(order(expected));
+  });
 
   it.each([
     { limit: 1.5 },

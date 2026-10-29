@@ -287,20 +287,22 @@ export function regionSplit<T extends RegionShape>(dataset: T): SplitPlanner {
       [...new Set([...cells.values()].map((cell) => cell[key]))].sort((x, y) => x - y);
     const coordinates = { latitude: axis('latitude'), longitude: axis('longitude') };
     /**
-     * POWER's regional bounds are inclusive, so tiles partition the box's cells: each interior
-     * bound is a cell coordinate and the next tile starts at the next cell (one native grid step
-     * on), while the outer tiles keep the box edges. Undefined when a part would span under 2°.
+     * POWER returns a cell when its center lies within the inclusive bounds, so adjacent tiles
+     * share an interior bound at the midpoint between their neighboring returned coordinates:
+     * no center sits on it, each cell lands in exactly one tile, and no grid step is assumed.
+     * The outer tiles keep the box edges. Undefined when a part would span under 2°.
      */
     const cut = (values: number[], min: number, max: number, parts: number) => {
       if (parts === 1) return [[min, max] as const];
       if (values.length < parts) return;
-      const ranges = balanced(values.length, parts).map(
-        ({ start, count }, index) =>
-          [
-            index === 0 ? min : (values[start] ?? min),
-            index === parts - 1 ? max : (values[start + count - 1] ?? max),
-          ] as const,
-      );
+      const bounds = [
+        min,
+        ...balanced(values.length, parts)
+          .slice(1)
+          .map(({ start }) => ((values[start - 1] ?? min) + (values[start] ?? max)) / 2),
+        max,
+      ];
+      const ranges = bounds.slice(1).map((high, index) => [bounds[index] ?? min, high] as const);
       return ranges.every(([low, high]) => high - low >= 2) ? ranges : undefined;
     };
     const grids: [number, number][] = [];

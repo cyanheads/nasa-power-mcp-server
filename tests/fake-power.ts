@@ -52,7 +52,10 @@ function series(codes: string[], periodKeys: string[], salt: number) {
   );
 }
 
-/** Grid points of the finest native grid (0.5° × 0.625°) inside the inclusive box. */
+/** Solar codes POWER serves on its 1° grid; every other code is on the 0.5° × 0.625° meteorology grid. */
+const SOLAR = /^(ALLSKY|CLRSKY|TOA)_/;
+
+/** Native grid points (`origin + index × step`) inside the inclusive range, as POWER selects cell centers. */
 function grid(min: number, max: number, step: number, origin: number): number[] {
   const points: number[] = [];
   for (
@@ -135,17 +138,19 @@ export function fakePower(
         messages: [],
       });
     }
+    /** A regional call carries one code; solar cells are centered at x.5 on 1° steps. */
+    const solar = requested.every((code) => SOLAR.test(code));
     const lats = grid(
       Number(query.get('latitude-min')),
       Number(query.get('latitude-max')),
-      0.5,
-      -90,
+      solar ? 1 : 0.5,
+      solar ? -89.5 : -90,
     );
     const lons = grid(
       Number(query.get('longitude-min')),
       Number(query.get('longitude-max')),
-      0.625,
-      -180,
+      solar ? 1 : 0.625,
+      solar ? -179.5 : -180,
     );
     return Response.json({
       type: 'FeatureCollection',

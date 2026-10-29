@@ -941,6 +941,35 @@ describe('geographic HTTP contracts', () => {
       expect(new Set(rows.map(identity)).size).toBe(960);
     });
 
+    it('splits a 1° solar-grid climatology region at the midpoint between cell centers', async () => {
+      offline(['ALLSKY_SFC_SW_DWN']);
+      const args = {
+        latitudeMin: 40,
+        latitudeMax: 44.9,
+        longitudeMin: -122,
+        longitudeMax: -118,
+        parameter: 'ALLSKY_SFC_SW_DWN',
+        temporalResolution: 'climatology',
+      };
+      /** 5 latitudes (40.5 to 44.5) × 4 longitudes (−121.5 to −118.5) × 13 periods. */
+      const split = sizedRefusal(await settle(runRaw(getRegionTool, args)), 260);
+      expect(split.calls).toEqual([
+        { latitudeMin: 40, latitudeMax: 44.9, longitudeMin: -122, longitudeMax: -120 },
+        { latitudeMin: 40, latitudeMax: 44.9, longitudeMin: -120, longitudeMax: -118 },
+      ]);
+      const rows = await resend(getRegionTool, args, split.calls);
+      const periods = [
+        ...['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'],
+        'ANN',
+      ];
+      const expected = [40.5, 41.5, 42.5, 43.5, 44.5].flatMap((latitude) =>
+        [-121.5, -120.5, -119.5, -118.5].flatMap((longitude) =>
+          periods.map((periodKey) => identity({ latitude, longitude, periodKey })),
+        ),
+      );
+      expect(rows.map(identity).sort()).toEqual(expected.sort());
+    });
+
     it('splits a daily-year comparison by contiguous date windows that sum to the row count', async () => {
       offline(['T2M']);
       const args = {

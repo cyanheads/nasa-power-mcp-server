@@ -71,7 +71,7 @@ export const compareLocationsTool = tool('nasa_power_compare_locations', {
     {
       reason: 'canvas_required',
       code: JsonRpcErrorCode.ConfigurationError,
-      when: 'Oversized observations require an enabled workspace',
+      when: 'Oversized observations or summaries require an enabled workspace',
       recovery:
         'Re-send the request as the calls listed in the error, each sized to fit inline, or use the npm or Docker distribution with CANVAS_PROVIDER_TYPE=duckdb.',
       thrownBy: 'service',

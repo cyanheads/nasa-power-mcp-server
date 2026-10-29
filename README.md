@@ -62,6 +62,7 @@ The skill ships in `skills/nasa-power-guide/SKILL.md`. Plugin hosts load it from
 - `latitude` / `longitude` and `temporalResolution`: `hourly` and `daily` take an inclusive `startDate` / `endDate`, `monthly` takes `startYear` / `endYear`. `selection` is a named `preset` (default `solar_pv`) or explicit `parameters`, at most 15 effective codes hourly and 20 otherwise, corrections included.
 - `community` (`RE`, `SB`, `AG`; default `RE`), `units` (`metric`, `imperial`) and `timeStandard` (`LST`, `UTC`). Optional `siteElevation` adds `PSC`; paired `windElevation` (10–300 meters) and `windSurface` add `WSC`. Use `nasa_power_list_reference` topic `wind_surfaces` for all 17 canonical NASA aliases, including `airportgrass`, `airportice` and `vegtype_1`; vegetation underscores are retained.
 - Returns `metadata`, `parameters`, `expansions`, `omittedParameters`, `summaries`, `rows`, an exact `rowCount` and `dataset` (null unless staged). Optional `canvas_id` reuses a canvas when staging is needed.
+- When the response still overflows the budget without its observations (wide selections with hour-of-day groups), the summaries stage beside the observations as `summaryDataset`; `summaries` keeps one entry and `summaryCount` gives the exact total. Query the table in `summaryIndex` order; SQL `units: null` restores an omitted source unit.
 - Codes NASA lists but does not serve at the requested resolution (`GDD*` at monthly and climatology, `*_HR_MAX` and `*_HR_MIN` at monthly) fail with `unsupported_parameter` before any data request, naming the codes and the resolution that serves them. This holds for every data tool.
 
 ---
@@ -69,7 +70,7 @@ The skill ships in `skills/nasa-power-guide/SKILL.md`. Plugin hosts load it from
 ### `nasa_power_get_climatology` <sub>tool</sub>
 
 - Point coordinates with the same selection and corrections; optional `startYear` and `endYear` together, otherwise the source product range. No `temporalResolution` input.
-- Small profiles remain inline; larger profiles return a bounded preview and complete `dataset` handle. Pass optional `canvas_id` to reuse an existing workspace. Without DuckDB, an oversized result is refused with `canvas_required`, which lists calls that each fit inline.
+- Small profiles remain inline; larger profiles return a bounded preview and complete `dataset` handle, and oversized summaries stage as `summaryDataset` with an exact `summaryCount`, as in `nasa_power_get_timeseries`. Pass optional `canvas_id` to reuse an existing workspace. Without DuckDB, an oversized result is refused with `canvas_required`, which lists calls that each fit inline: parameter groups for a wide selection.
 - Group codes list only their actually returned members in `expansions`, on every data tool: `SI_EF_TILTED_SURFACE` and the distinct `SI_TILTED_AVG`, `SI_TILTED_MIN`, `SI_TILTED_MAX` groups (numeric angles and N/S orientation text included), the `SI_TRACKER_AVG`, `SI_TRACKER_MIN`, `SI_TRACKER_MAX` groups, hour-of-day `*_HR` groups (members `*_00` … `*_23`, monthly and climatology) and `*_HR_MAX` / `*_HR_MIN` groups (members `*_00_MAX` … `*_23_MAX`, climatology). A group is omitted only when none of its members return.
 
 ---

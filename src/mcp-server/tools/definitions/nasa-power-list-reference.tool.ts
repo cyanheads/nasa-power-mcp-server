@@ -193,7 +193,7 @@ export const listReferenceTool = tool('nasa_power_list_reference', {
       guidance.push(
         'Use nasa_power_dataframe_describe and nasa_power_dataframe_query with the exact returned canvas_id. Tokens expire and cannot cross processes.',
         'Oversized comparison summaries have summaryDatasets handles; query in summaryIndex order and group location summaries by locationId. SQL NULL units restore an omitted source unit.',
-        'Oversized regional summaries have a summaryDataset handle and exact summaryCount; query in summaryIndex order to restore every cross-cell summary.',
+        'Oversized region, time-series and climatology summaries have a summaryDataset handle and exact summaryCount; query in summaryIndex order to restore every summary.',
         'npm and Docker installs stage larger tables in DuckDB by default; the portable MCPB supports inline data only. Without a native provider, an oversized result is refused with canvas_required listing calls that each fit inline; send those calls.',
       );
       if (getServerConfig().dataframeDropEnabled)

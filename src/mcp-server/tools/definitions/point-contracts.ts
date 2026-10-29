@@ -2,7 +2,6 @@
 import type { Context } from '@cyanheads/mcp-ts-core';
 import { z } from '@cyanheads/mcp-ts-core';
 import { getCanvasService } from '@/services/canvas/index.js';
-import { pointSplit } from '@/services/canvas/inline-split.js';
 import { estimatePointBytes } from '@/services/canvas/producer-estimate.js';
 import {
   DatasetHandleSchema,
@@ -11,11 +10,19 @@ import {
   type PowerRequest,
 } from '@/services/power/index.js';
 
-/** Full scientific envelope with exact row count and optional staged pointer. */
+/** Full scientific envelope with exact row count and optional staged pointers. */
 export const PointOutputSchema = PowerDatasetSchema.extend({
   rowCount: z.number().int().describe('Exact full normalized observation count'),
   dataset: DatasetHandleSchema.nullable().describe(
     'Full-table handle when observations exceed inline budget; null otherwise',
+  ),
+  summaryCount: z
+    .number()
+    .int()
+    .optional()
+    .describe('Exact complete summary count when summaries are staged; summaries then holds one'),
+  summaryDataset: DatasetHandleSchema.optional().describe(
+    'Complete summaries ordered by summaryIndex; SQL NULL units restore an omitted source unit',
   ),
 });
 
@@ -34,10 +41,12 @@ export function presentPoint(
       onHeldBytes: lease.bodyBytes,
     });
     const callCtx = { ...producerCtx, signal: budget.signal };
-    const dataset = await power.point(request, callCtx, budget);
-    return canvas.present(dataset, canvasId, callCtx, sourceTool, {
+    return canvas.presentPoint(
+      await power.point(request, callCtx, budget),
+      canvasId,
+      callCtx,
+      sourceTool,
       lease,
-      split: pointSplit(dataset),
-    });
+    );
   });
 }

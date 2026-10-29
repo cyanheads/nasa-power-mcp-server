@@ -138,22 +138,27 @@ describe('prefixSplit', () => {
   });
 });
 
-/** Grid points of the 0.5° × 0.625° native grid inside an inclusive range. */
+/** Grid points of a native grid inside an inclusive range. */
 const grid = (min: number, max: number, step: number, origin: number) => {
   const points: number[] = [];
   for (let i = Math.ceil((min - origin) / step - 1e-9); origin + i * step <= max + 1e-9; i++)
     points.push(Number((origin + i * step).toFixed(4)));
   return points;
 };
-function region(
-  bounds: Record<'latitudeMin' | 'latitudeMax' | 'longitudeMin' | 'longitudeMax', number>,
-) {
+/** POWER's native grids as [step, origin] per axis: meteorology 0.5° × 0.625°, solar 1° centered at x.5. */
+const grids = {
+  meteorology: { latitude: [0.5, -90], longitude: [0.625, -180] },
+  solar: { latitude: [1, -89.5], longitude: [1, -179.5] },
+} as const;
+type Bounds = Record<'latitudeMin' | 'latitudeMax' | 'longitudeMin' | 'longitudeMax', number>;
+function region(bounds: Bounds, native: keyof typeof grids = 'meteorology') {
   const periods = [
     ...['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'],
     'ANN',
   ];
-  const cells = grid(bounds.latitudeMin, bounds.latitudeMax, 0.5, -90).flatMap((latitude) =>
-    grid(bounds.longitudeMin, bounds.longitudeMax, 0.625, -180).map((longitude) => ({
+  const { latitude: lat, longitude: lon } = grids[native];
+  const cells = grid(bounds.latitudeMin, bounds.latitudeMax, lat[0], lat[1]).flatMap((latitude) =>
+    grid(bounds.longitudeMin, bounds.longitudeMax, lon[0], lon[1]).map((longitude) => ({
       latitude,
       longitude,
     })),
@@ -168,6 +173,23 @@ function region(
     cells,
   } satisfies RegionShape & { cells: unknown[] };
 }
+/** Tiles holding each cell under inclusive bounds, as POWER selects cells by center. */
+const holders = (
+  cells: { latitude: number; longitude: number }[],
+  calls: Record<string, unknown>[],
+) =>
+  cells.map(
+    (cell) =>
+      calls.filter((call) => {
+        const tile = call as Bounds;
+        return (
+          cell.latitude >= tile.latitudeMin &&
+          cell.latitude <= tile.latitudeMax &&
+          cell.longitude >= tile.longitudeMin &&
+          cell.longitude <= tile.longitudeMax
+        );
+      }).length,
+  );
 
 describe('regionSplit', () => {
   const box = { latitudeMin: 40, latitudeMax: 46, longitudeMin: -124, longitudeMax: -118 };
@@ -181,28 +203,20 @@ describe('regionSplit', () => {
     expect(dataset.rows).toHaveLength(1690);
     const split = regionSplit(dataset)(rowsAtMost(600));
     /**
-     * Each next tile starts one grid step past the previous tile's last cell (0.5° latitude,
-     * 0.625° longitude); the outer tiles keep the box edges.
+     * Adjacent tiles share an interior bound at the midpoint between their neighboring cells
+     * (42.5 | 43 latitude, −121.25 | −120.625 longitude); the outer tiles keep the box edges.
      */
     expect(split).toEqual({
       inlineRows: 455,
       calls: [
-        { latitudeMin: 40, latitudeMax: 42.5, longitudeMin: -124, longitudeMax: -121.25 },
-        { latitudeMin: 40, latitudeMax: 42.5, longitudeMin: -120.625, longitudeMax: -118 },
-        { latitudeMin: 43, latitudeMax: 46, longitudeMin: -124, longitudeMax: -121.25 },
-        { latitudeMin: 43, latitudeMax: 46, longitudeMin: -120.625, longitudeMax: -118 },
+        { latitudeMin: 40, latitudeMax: 42.75, longitudeMin: -124, longitudeMax: -120.9375 },
+        { latitudeMin: 40, latitudeMax: 42.75, longitudeMin: -120.9375, longitudeMax: -118 },
+        { latitudeMin: 42.75, latitudeMax: 46, longitudeMin: -124, longitudeMax: -120.9375 },
+        { latitudeMin: 42.75, latitudeMax: 46, longitudeMin: -120.9375, longitudeMax: -118 },
       ],
     });
     /** Under inclusive bounds, as POWER applies them, every cell falls in exactly one tile. */
-    const holders = (cell: { latitude: number; longitude: number }) =>
-      split.calls.filter(
-        (call) =>
-          cell.latitude >= (call.latitudeMin as number) &&
-          cell.latitude <= (call.latitudeMax as number) &&
-          cell.longitude >= (call.longitudeMin as number) &&
-          cell.longitude <= (call.longitudeMax as number),
-      ).length;
-    expect(dataset.cells.map(holders)).toEqual(dataset.cells.map(() => 1));
+    expect(holders(dataset.cells, split.calls)).toEqual(dataset.cells.map(() => 1));
   });
 
   it('cuts an off-grid box between its cells, keeping each tile at least 2°', () => {
@@ -214,17 +228,19 @@ describe('regionSplit', () => {
       longitudeMax: -120,
     });
     expect(dataset.rows).toHaveLength(520);
-    expect(regionSplit(dataset)(rowsAtMost(300))).toEqual({
+    const split = regionSplit(dataset)(rowsAtMost(300));
+    expect(split).toEqual({
       inlineRows: 260,
       calls: [
-        { latitudeMin: 40.2, latitudeMax: 42.5, longitudeMin: -122, longitudeMax: -120 },
-        { latitudeMin: 43, latitudeMax: 45.2, longitudeMin: -122, longitudeMax: -120 },
+        { latitudeMin: 40.2, latitudeMax: 42.75, longitudeMin: -122, longitudeMax: -120 },
+        { latitudeMin: 42.75, latitudeMax: 45.2, longitudeMin: -122, longitudeMax: -120 },
       ],
     });
+    expect(holders(dataset.cells, split.calls)).toEqual(dataset.cells.map(() => 1));
   });
 
-  it('does not cut an axis whose parts would drop below 2°, even when the span is at least 4°', () => {
-    /** 9 latitudes (40.5 to 44.5): any cut between cells leaves one side under 2° (40.2–42, 42.5–44.7). */
+  it('cuts at the midpoint between cells where cutting on a cell would leave a side under 2°', () => {
+    /** 9 latitudes (40.5 to 44.5): the cut between 42 and 42.5 gives 40.2–42.25 and 42.25–44.7. */
     const dataset = region({
       latitudeMin: 40.2,
       latitudeMax: 44.7,
@@ -232,7 +248,56 @@ describe('regionSplit', () => {
       longitudeMax: -120,
     });
     expect(dataset.rows).toHaveLength(468);
-    expect(regionSplit(dataset)(rowsAtMost(300))).toEqual({ inlineRows: 300, calls: [] });
+    const split = regionSplit(dataset)(rowsAtMost(300));
+    expect(split).toEqual({
+      inlineRows: 260,
+      calls: [
+        { latitudeMin: 40.2, latitudeMax: 42.25, longitudeMin: -122, longitudeMax: -120 },
+        { latitudeMin: 42.25, latitudeMax: 44.7, longitudeMin: -122, longitudeMax: -120 },
+      ],
+    });
+    expect(holders(dataset.cells, split.calls)).toEqual(dataset.cells.map(() => 1));
+  });
+
+  it('splits a box on the 1° solar grid at the midpoint between cell centers', () => {
+    /** 5 latitudes (40.5 to 44.5) × 4 longitudes (−121.5 to −118.5) × 13 periods. */
+    const dataset = region(
+      { latitudeMin: 40, latitudeMax: 44.9, longitudeMin: -122, longitudeMax: -118 },
+      'solar',
+    );
+    expect(dataset.rows).toHaveLength(260);
+    const split = regionSplit(dataset)(rowsAtMost(181));
+    expect(split).toEqual({
+      inlineRows: 130,
+      calls: [
+        { latitudeMin: 40, latitudeMax: 44.9, longitudeMin: -122, longitudeMax: -120 },
+        { latitudeMin: 40, latitudeMax: 44.9, longitudeMin: -120, longitudeMax: -118 },
+      ],
+    });
+    expect(holders(dataset.cells, split.calls)).toEqual(dataset.cells.map(() => 1));
+  });
+
+  it('does not cut an axis whose midpoint parts would drop below 2°, even when the span is at least 4°', () => {
+    /** 4 latitudes (40.5 to 43.5) on the 1° grid: the only cut, at 42, leaves 40.2–42 (1.8°). */
+    const dataset = region(
+      { latitudeMin: 40.2, latitudeMax: 44.2, longitudeMin: -122, longitudeMax: -120 },
+      'solar',
+    );
+    expect(dataset.rows).toHaveLength(104);
+    expect(regionSplit(dataset)(rowsAtMost(60))).toEqual({ inlineRows: 60, calls: [] });
+  });
+
+  it('does not cut an axis with fewer returned coordinates than parts', () => {
+    /** A 4° latitude span whose rows hold one latitude (42) × 4 longitudes: no latitude cut exists. */
+    const dataset = region({
+      latitudeMin: 40,
+      latitudeMax: 44,
+      longitudeMin: -122,
+      longitudeMax: -120,
+    });
+    dataset.rows = dataset.rows.filter((row) => row.latitude === 42);
+    expect(dataset.rows).toHaveLength(52);
+    expect(regionSplit(dataset)(rowsAtMost(30))).toEqual({ inlineRows: 30, calls: [] });
   });
 
   it('never offers a tile narrower than 2°, so a minimal box that does not fit has no split', () => {

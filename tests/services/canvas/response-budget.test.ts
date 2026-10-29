@@ -5,10 +5,46 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { POWER_LIMITS } from '@/config/server-config.js';
 import { ComparisonOutputSchema } from '@/mcp-server/tools/definitions/comparison-contracts.js';
 import { formatFaithfully } from '@/services/canvas/format.js';
+import { normalizePoint, PointPayloadSchema } from '@/services/power/normalize.js';
+import { aliasMembership } from '@/services/power/presets.js';
+import { PowerRequestSchema } from '@/services/power/types.js';
 import { dataset, nativeFixture } from './fixture.js';
 
 function renderedLength(value: object): number {
   return formatFaithfully(value).reduce((total, block) => total + block.text.length, 0);
+}
+
+/** The captured 58-column hour-group climatology, normalized for a selection of its codes. */
+async function widePoint(parameters: string[]) {
+  const payload = PointPayloadSchema.parse(
+    JSON.parse(
+      await readFile(new URL('../../fixtures/hour-wide-climatology.json', import.meta.url), 'utf8'),
+    ),
+  );
+  const keep = new Set(
+    Object.keys(payload.properties.parameter).filter((code) =>
+      parameters.some(
+        (selected) => code === selected || aliasMembership(selected)?.(code) === true,
+      ),
+    ),
+  );
+  payload.properties.parameter = Object.fromEntries(
+    Object.entries(payload.properties.parameter).filter(([code]) => keep.has(code)),
+  );
+  return normalizePoint(
+    payload,
+    PowerRequestSchema.parse({
+      latitude: 41.9,
+      longitude: -93.6,
+      temporalResolution: 'climatology',
+      selection: { mode: 'parameters', parameters },
+    }),
+    {
+      endpointUrl: 'https://power.larc.nasa.gov/',
+      fetchedAt: '2026-10-29T00:00:00Z',
+      cacheHit: false,
+    },
+  );
 }
 
 describe('complete analytical response budget', () => {
@@ -208,6 +244,122 @@ describe('complete analytical response budget', () => {
     expect(register).toHaveBeenCalledTimes(2);
     expect(JSON.stringify(output).length).toBeLessThanOrEqual(40000);
     expect(renderedLength(output)).toBeLessThanOrEqual(40000);
+  });
+
+  it('stages oversized point summaries alongside observations in one batch', async () => {
+    const wide = await widePoint([
+      'ALLSKY_SFC_SW_DWN_HR',
+      'ALLSKY_SFC_SW_DIFF_HR',
+      'SI_TRACKER_AVG',
+      'T2M',
+      'RH2M',
+      'WS10M',
+      'PS',
+      'PRECTOTCORR',
+    ]);
+    expect(wide.parameters).toHaveLength(58);
+    expect(
+      JSON.stringify({ ...wide, rows: [], rowCount: 13, dataset: null }).length,
+    ).toBeGreaterThan(POWER_LIMITS.inlineCharacters);
+    const acquire = vi.spyOn(fixture.canvas, 'acquire');
+    const register = vi.spyOn(fixture.provider, 'registerTable');
+    const output = await fixture.service.presentPoint(
+      wide,
+      undefined,
+      fixture.ctx,
+      'nasa_power_get_climatology',
+    );
+    const { rows: _rows, summaries: _summaries, ...envelope } = wide;
+    expect(output).toMatchObject({
+      ...envelope,
+      summaries: wide.summaries.slice(0, 1),
+      summaryCount: 116,
+      rowCount: 13,
+    });
+    expect(output.rows).toEqual(wide.rows.slice(0, output.rows.length));
+    expect(output.summaryDataset).toMatchObject({
+      canvas_id: output.dataset?.canvas_id,
+      rowCount: 116,
+    });
+    expect(output.dataset?.rowCount).toBe(13);
+    expect(acquire).toHaveBeenCalledOnce();
+    expect(register).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(output).length).toBeLessThanOrEqual(40000);
+    expect(renderedLength(output)).toBeLessThanOrEqual(40000);
+  });
+
+  it('presents a point whose envelope without rows fits exactly as the single-table path does', async () => {
+    const narrow = await widePoint(['SI_TRACKER_AVG', 'T2M', 'RH2M']);
+    const acquire = vi.spyOn(fixture.canvas, 'acquire');
+    const inline = await fixture.service.presentPoint(
+      narrow,
+      undefined,
+      fixture.ctx,
+      'nasa_power_get_climatology',
+    );
+    expect(inline).toEqual(
+      await fixture.service.present(narrow, undefined, fixture.ctx, 'nasa_power_get_climatology'),
+    );
+    expect(inline).toEqual({ ...narrow, rowCount: 13, dataset: null });
+    expect(acquire).not.toHaveBeenCalled();
+  });
+
+  it('counts a point summary stage as two tables against the per-canvas table cap', async () => {
+    const summarized = await widePoint([
+      'ALLSKY_SFC_SW_DWN_HR',
+      'ALLSKY_SFC_SW_DIFF_HR',
+      'SI_TRACKER_AVG',
+      'T2M',
+      'RH2M',
+      'WS10M',
+      'PS',
+      'PRECTOTCORR',
+    ]);
+    /** Observations overflow inline while the envelope without rows fits: one table. */
+    const observed = await widePoint([
+      'ALLSKY_SFC_SW_DIFF_HR',
+      'SI_TRACKER_AVG',
+      'T2M',
+      'RH2M',
+      'WS10M',
+      'PS',
+      'PRECTOTCORR',
+    ]);
+    const stage = (data: typeof summarized, canvasId?: string) =>
+      fixture.service.presentPoint(data, canvasId, fixture.ctx, 'nasa_power_get_climatology');
+    const tables = async (canvasId: string) =>
+      (await fixture.provider.describe(canvasId, fixture.ctx)).length;
+    const refusal = {
+      message: 'Analytical workspace memory or table capacity is exhausted.',
+      data: {
+        reason: 'canvas_capacity_exhausted',
+        recovery: {
+          hint: 'Reuse a canvas_id already returned to you, or wait for staged tables to expire before retrying.',
+        },
+        retryable: true,
+      },
+    };
+    /** Four summary stages reach the cap exactly; a fifth would need two more. */
+    const first = await stage(summarized);
+    expect(first.summaryDataset?.canvas_id).toBe(first.dataset?.canvas_id);
+    const full = first.dataset!.canvas_id;
+    for (let index = 1; index < POWER_LIMITS.tablesPerCanvas / 2; index++)
+      await stage(summarized, full);
+    expect(await tables(full)).toBe(POWER_LIMITS.tablesPerCanvas);
+    await expect(stage(summarized, full)).rejects.toMatchObject(refusal);
+    expect(await tables(full)).toBe(POWER_LIMITS.tablesPerCanvas);
+    /** At seven tables a summary stage would make nine, while an observation-only stage fits. */
+    const single = await stage(observed);
+    expect(single.summaryDataset).toBeUndefined();
+    const seven = single.dataset!.canvas_id;
+    for (let index = 0; index < 3; index++) await stage(summarized, seven);
+    expect(await tables(seven)).toBe(POWER_LIMITS.tablesPerCanvas - 1);
+    await expect(stage(summarized, seven)).rejects.toMatchObject(refusal);
+    expect(await tables(seven)).toBe(POWER_LIMITS.tablesPerCanvas - 1);
+    const last = await stage(observed, seven);
+    expect(last.summaryDataset).toBeUndefined();
+    expect(last.dataset?.canvas_id).toBe(seven);
+    expect(await tables(seven)).toBe(POWER_LIMITS.tablesPerCanvas);
   });
 
   it('stages the full point table while fitting metadata, pointer and whole-row preview on both surfaces', async () => {

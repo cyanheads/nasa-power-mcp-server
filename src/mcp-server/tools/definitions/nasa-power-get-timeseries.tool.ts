@@ -9,7 +9,7 @@ import { PointOutputSchema, presentPoint } from './point-contracts.js';
 export const getTimeseriesTool = tool('nasa_power_get_timeseries', {
   title: 'Get NASA POWER timeseries',
   description:
-    'Retrieve complete hourly, daily or monthly observations at latitude/longitude. Hourly and daily require startDate/endDate; monthly requires startYear/endYear. Use nasa_power_search_parameters for codes and nasa_power_list_reference for presets. Large results return a full-table canvas handle and preview.',
+    'Retrieve complete hourly, daily or monthly observations at latitude/longitude. Hourly and daily require startDate/endDate; monthly requires startYear/endYear. Use nasa_power_search_parameters for codes and nasa_power_list_reference for presets. Large results return a full-table canvas handle and preview; oversized summaries stage as summaryDataset with exact summaryCount, queried in summaryIndex order.',
   annotations: { readOnlyHint: true, openWorldHint: true },
   input: z.discriminatedUnion('temporalResolution', [
     PowerRequestSchema.options[0].extend({
@@ -124,7 +124,7 @@ export const getTimeseriesTool = tool('nasa_power_get_timeseries', {
     {
       reason: 'canvas_required',
       code: JsonRpcErrorCode.ConfigurationError,
-      when: 'Oversized observations require an enabled workspace',
+      when: 'Oversized observations or summaries require an enabled workspace',
       recovery:
         'Re-send the request as the calls listed in the error, each sized to fit inline, or use the npm or Docker distribution with CANVAS_PROVIDER_TYPE=duckdb.',
       thrownBy: 'service',

@@ -4,7 +4,7 @@ description: Plan nasa_power_* calls for NASA POWER solar, wind, temperature, pr
 license: Apache-2.0
 metadata:
   author: cyanheads
-  version: "1.0.1"
+  version: "1.0.2"
 ---
 
 ## Scope
@@ -24,13 +24,13 @@ Sites that fall in the same cell return identical values. The `returnedCoordinat
 
 - **Parameter codes** come from `nasa_power_search_parameters` for one community and temporalResolution pair. A code valid at daily can be missing at hourly: degree days, `T2M_MAX` and `T2M_MIN` have no hourly form. Filter with plain words, for example `degree days` or `wind 50`.
 - **Preset names and the `SI_EF_TILTED_SURFACE` alias** (climatology only) come from `nasa_power_list_reference` topic `presets`.
-- **`canvas_id` and table names** come from the handles on a producing response: `dataset` for observations, `summaryDataset` for regional summaries, `summaryDatasets.buckets` and `summaryDatasets.locations` for comparison summaries.
+- **`canvas_id` and table names** come from the handles on a producing response: `dataset` for observations, `summaryDataset` for point and regional summaries, `summaryDatasets.buckets` and `summaryDatasets.locations` for comparison summaries. A summary handle appears only when the response is too large to return inline even without its rows; `summaries` then holds one entry, `summaryCount` gives the total, and the table restores the array in `summaryIndex` order.
 - **`locationId`, `label` and `cellId`** are row columns. `locationId` follows input position (`location_1` …), and `cellId` numbers the cells in a regional result.
 
 ## Gates
 
 1. **Overlapping data calls are admitted or wait briefly.** `nasa_power_get_timeseries`, `nasa_power_get_climatology`, `nasa_power_get_region` and `nasa_power_compare_locations` share a limited budget, and a small call runs alongside others. A call that doesn't fit waits for a running one to finish, within its own deadline. If it is still refused with `producer_capacity_exhausted`, other data calls are holding the capacity: retry after one returns. A `canvas_busy` refusal means a query or operation on that canvas is still running, or the server's query pool is full: retry when it returns. Neither refusal is about canvases to reuse. For several sites, one `nasa_power_compare_locations` call (up to 10 sites) beats parallel point calls.
-2. **Check freshness before you conclude.** The latest days of a window come back as nulls until NASA releases them, and solar can lag meteorology. Read `summaries[].lastValidDate` for each parameter. Never report trailing nulls as zero, as calm, or as "no sun".
+2. **Check freshness before you conclude.** The latest days of a window come back as nulls until NASA releases them, and solar can lag meteorology. Read `summaries[].lastValidDate` for each parameter, from the `summaryDataset` table (`summaryDatasets.locations` for a comparison) when the response staged its summaries. Never report trailing nulls as zero, as calm, or as "no sun".
 3. **Same cell, not a tie.** When `nasa_power_compare_locations` returns `possibleSharedGridCell`, the listed sites sit in one cell. Report them as indistinguishable, not as equal results.
 4. **Rate or total.** Check what a value measures before summing or comparing:
    - `PRECTOTCORR` is mm/day at every resolution. Monthly values, `YYYY13` and climatology months and `ANN` are mean daily rates, so multiply by the number of days for a total.
@@ -61,7 +61,7 @@ Sites that fall in the same cell return identical values. The `returnedCoordinat
 
 Staging is automatic. A data call stages only when the complete response would not fit inline. Smaller results come back inline with `dataset: null`, even when you pass `canvas_id`, and you compute from those rows directly. Where staging isn't available, an oversized result is refused with `canvas_required`. The refusal gives the result's row count, how many rows fit inline, and a list of calls (date or year windows, parameter groups, smaller regions or site groups); send those calls instead, as each fits inline.
 
-Results too large to return inline are staged as a DataCanvas table, and the response carries a `canvas_id`. Call `nasa_power_dataframe_describe` with it for the staged table and column names before writing SQL, then `nasa_power_dataframe_query` with a read-only query. Pass the same `canvas_id` back to stage further results beside the first; each table expires at the `expiresAt` on its handle.
+Results too large to return inline are staged as a DataCanvas table, and the response carries a `canvas_id`. Call `nasa_power_dataframe_describe` with it and the handle's `table` for column names and provenance before writing SQL (a whole-canvas describe can exceed the response budget, as it does for a wide point selection's two tables), then `nasa_power_dataframe_query` with a read-only query. Pass the same `canvas_id` back to stage further results beside the first; each table expires at the `expiresAt` on its handle.
 
 - **Dialect.** DuckDB. Reference tables by the exact `power_…` name from the handle.
 - **Observation columns.** `periodKey`, `periodKind`, `date`, `year`, `month`, `hour`, `latitude`, `longitude`, `elevation`, then one column per returned parameter code. Comparison tables add `locationId` and `label`; regional tables add `cellId`.
