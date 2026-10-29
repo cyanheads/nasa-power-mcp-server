@@ -4,7 +4,7 @@ All notable changes to this project. Each entry links to its full per-version fi
 
 ## [0.4.2](changelog/0.4.x/0.4.2.md) — 2026-10-29
 
-Wide point selections that overflow the response budget on summaries alone are now served under DuckDB, or refused with canvas_required and re-sendable parameter-group calls without it, and region splits now work on coarse-grid parameters.
+Wide point selections that overflow the response budget even without their observations are now served under DuckDB, or refused with canvas_required and re-sendable parameter-group calls without it, and region splits now work on coarse-grid parameters.
 
 ## [0.4.1](changelog/0.4.x/0.4.1.md) — 2026-10-28
 
