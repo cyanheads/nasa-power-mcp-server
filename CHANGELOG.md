@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.5.0](changelog/0.5.x/0.5.0.md) — 2026-11-23 · ⚠️ Breaking
+
+Adds nasa_power_get_design_conditions, and nasa_power_compare_locations accepts 20 locations, comparing 10 per call and returning the rest as deferredLocations. Breaking: possibleSharedGridCell is now grouped per parameter, and aliases or CTEs named like DuckDB metadata views are refused.
+
 ## [0.4.2](changelog/0.4.x/0.4.2.md) — 2026-10-29
 
 Wide point selections that overflow the response budget even without their observations are now served under DuckDB, or refused with canvas_required and re-sendable parameter-group calls without it, and region splits now work on coarse-grid parameters.

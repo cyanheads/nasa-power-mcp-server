@@ -1,6 +1,6 @@
 # nasa-power-mcp-server - Directory Structure
 
-Generated on: 2026-10-29 19:09:05
+Generated on: 2026-11-24 00:07:11
 
 ```text
 nasa-power-mcp-server/
@@ -28,6 +28,7 @@ nasa-power-mcp-server/
 │   ├── 0.2.x/
 │   ├── 0.3.x/
 │   ├── 0.4.x/
+│   ├── 0.5.x/
 │   └── template.md
 ├── docs/
 │   └── design.md
@@ -157,6 +158,7 @@ nasa-power-mcp-server/
 │   │           ├── nasa-power-dataframe-drop.tool.ts
 │   │           ├── nasa-power-dataframe-query.tool.ts
 │   │           ├── nasa-power-get-climatology.tool.ts
+│   │           ├── nasa-power-get-design-conditions.tool.ts
 │   │           ├── nasa-power-get-region.tool.ts
 │   │           ├── nasa-power-get-timeseries.tool.ts
 │   │           ├── nasa-power-list-reference.tool.ts
@@ -172,6 +174,7 @@ nasa-power-mcp-server/
 │   │   │   ├── producer-estimate.ts
 │   │   │   └── types.ts
 │   │   └── power/
+│   │       ├── design-conditions.ts
 │   │       ├── errors.ts
 │   │       ├── index.ts
 │   │       ├── normalize.ts
@@ -188,6 +191,11 @@ nasa-power-mcp-server/
 │   ├── fixtures/
 │   │   ├── climate-zones.json
 │   │   ├── comparison-full.json
+│   │   ├── design-conditions-configuration.json
+│   │   ├── design-conditions-seattle-2001-2025.json
+│   │   ├── design-conditions-seattle-2020-2024.json
+│   │   ├── design-conditions-span-rejected.json
+│   │   ├── design-conditions-sparse.json
 │   │   ├── hour-extremes-regional.json
 │   │   ├── hour-group-monthly.json
 │   │   ├── hour-tracker-climatology.json
@@ -206,6 +214,7 @@ nasa-power-mcp-server/
 │   │       ├── nasa-power-dataframe.test.ts
 │   │       ├── nasa-power-geographic-native.test.ts
 │   │       ├── nasa-power-geographic.test.ts
+│   │       ├── nasa-power-get-design-conditions.test.ts
 │   │       ├── nasa-power-point-discovery.test.ts
 │   │       ├── nasa-power-reference-config.test.ts
 │   │       ├── nasa-power-reference-size-recovery.test.ts
@@ -226,6 +235,8 @@ nasa-power-mcp-server/
 │   │   │   ├── request-lifetime.test.ts
 │   │   │   └── response-budget.test.ts
 │   │   └── power/
+│   │       ├── design-conditions.test.ts
+│   │       ├── errors.test.ts
 │   │       ├── parameter-caps.test.ts
 │   │       ├── power-service.test.ts
 │   │       └── science.test.ts
@@ -244,6 +255,7 @@ nasa-power-mcp-server/
 ├── bun.lock
 ├── bunfig.toml
 ├── CHANGELOG.md
+├── CITATION.cff
 ├── CLAUDE.md
 ├── devcheck.config.json
 ├── Dockerfile
