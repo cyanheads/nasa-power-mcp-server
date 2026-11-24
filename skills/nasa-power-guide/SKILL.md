@@ -1,10 +1,10 @@
 ---
 name: nasa-power-guide
-description: Plan nasa_power_* calls for NASA POWER solar, wind, temperature, precipitation, and degree-day history. Covers which tool answers a typical-month versus a dated question, overlapping data calls, grid-cell size, data freshness, rate versus total units, degree days, and SQL over staged tables. Use before solar sizing, wind screening, site comparison, regional, or agroclimate work with these tools.
+description: Plan nasa_power_* calls for NASA POWER solar, wind, temperature, precipitation, and degree-day history. Covers which tool answers a typical-month, dated or HVAC design-condition question, overlapping data calls, grid-cell size, data freshness, rate versus total units, degree days, and SQL over staged tables. Use before solar sizing, wind screening, HVAC design conditions, site comparison, regional, or agroclimate work with these tools.
 license: Apache-2.0
 metadata:
   author: cyanheads
-  version: "1.0.2"
+  version: "1.1.0"
 ---
 
 ## Scope
@@ -24,23 +24,24 @@ Sites that fall in the same cell return identical values. The `returnedCoordinat
 
 - **Parameter codes** come from `nasa_power_search_parameters` for one community and temporalResolution pair. A code valid at daily can be missing at hourly: degree days, `T2M_MAX` and `T2M_MIN` have no hourly form. Filter with plain words, for example `degree days` or `wind 50`.
 - **Preset names and the `SI_EF_TILTED_SURFACE` alias** (climatology only) come from `nasa_power_list_reference` topic `presets`.
-- **`canvas_id` and table names** come from the handles on a producing response: `dataset` for observations, `summaryDataset` for point and regional summaries, `summaryDatasets.buckets` and `summaryDatasets.locations` for comparison summaries. A summary handle appears only when the response is too large to return inline even without its rows; `summaries` then holds one entry, `summaryCount` gives the total, and the table restores the array in `summaryIndex` order.
+- **`canvas_id` and table names** come from the handles on a producing response: `dataset` for observations, `summaryDataset` for point and regional summaries, `summaryDatasets.buckets` and `summaryDatasets.locations` for comparison summaries. A summary handle appears only when the response is too large to carry even a one-row preview of its rows; `summaries` then holds one entry, `summaryCount` gives the total, and the table restores the array in `summaryIndex` order.
 - **`locationId`, `label` and `cellId`** are row columns. `locationId` follows input position (`location_1` …), and `cellId` numbers the cells in a regional result.
 
 ## Gates
 
-1. **Overlapping data calls are admitted or wait briefly.** `nasa_power_get_timeseries`, `nasa_power_get_climatology`, `nasa_power_get_region` and `nasa_power_compare_locations` share a limited budget, and a small call runs alongside others. A call that doesn't fit waits for a running one to finish, within its own deadline. If it is still refused with `producer_capacity_exhausted`, other data calls are holding the capacity: retry after one returns. A `canvas_busy` refusal means a query or operation on that canvas is still running, or the server's query pool is full: retry when it returns. Neither refusal is about canvases to reuse. For several sites, one `nasa_power_compare_locations` call (up to 10 sites) beats parallel point calls.
+1. **Overlapping data calls are admitted or wait briefly.** `nasa_power_get_timeseries`, `nasa_power_get_climatology`, `nasa_power_get_region` and `nasa_power_compare_locations` share a limited budget, and a small call runs alongside others. A call that doesn't fit waits for a running one to finish, within its own deadline. If it is still refused with `producer_capacity_exhausted`, other data calls are holding the capacity: retry after one returns. A `canvas_busy` refusal means a query or operation on that canvas is still running, or the server's query pool is full: retry when it returns. Neither refusal is about canvases to reuse. For several sites, one `nasa_power_compare_locations` call beats parallel point calls: it compares up to 10 sites, and with 11 to 20 it compares the first 10 (9 when 11 arrive) and returns the rest in `deferredLocations`. Send those as `locations` in the next call with every other argument unchanged and the returned `canvas_id`, after the first call returns. That call numbers its sites from `location_1`, so match sites across calls by `label`.
 2. **Check freshness before you conclude.** The latest days of a window come back as nulls until NASA releases them, and solar can lag meteorology. Read `summaries[].lastValidDate` for each parameter, from the `summaryDataset` table (`summaryDatasets.locations` for a comparison) when the response staged its summaries. Never report trailing nulls as zero, as calm, or as "no sun".
-3. **Same cell, not a tie.** When `nasa_power_compare_locations` returns `possibleSharedGridCell`, the listed sites sit in one cell. Report them as indistinguishable, not as equal results.
+3. **Same cell, not a tie.** `possibleSharedGridCell` groups sites whose returned series are identical for the listed `parameters`, nulls included, so they likely read one grid cell for those parameters. Solar and meteorology use different grids, and two sites can share one but not the other. Report them as indistinguishable on those parameters, not as equal results. Groups cover only the sites in one response, and a parameter with fewer than two distinct valid values in the window is not checked.
 4. **Rate or total.** Check what a value measures before summing or comparing:
    - `PRECTOTCORR` is mm/day at every resolution. Monthly values, `YYYY13` and climatology months and `ANN` are mean daily rates, so multiply by the number of days for a total.
    - Solar units follow the community: `RE` returns kW-hr/m^2/day and `AG` returns MJ/m^2/day for the same code.
    - Degree-day codes (`GDD*`, `HDD*`, `CDD*`) are totals for their period: per day, and for `HDD*` and `CDD*` also per month and per year for `ANN` and `YYYY13`.
    - Temperature, humidity and wind annual records are means.
 5. **Degree days come from NASA.** Growing degree days are source codes `GDD4_4`, `GDD7_2`, `GDD10`, `GDD13_3` and `GDD15_6` (base °C), alongside `HDD*` and `CDD*`. Request them; don't rebuild them from `T2M`. `GDD*` is served only at daily: NASA's dictionary lists it at monthly and climatology, but it has no data there, so those calls fail with `unsupported_parameter` before any data request and `nasa_power_search_parameters` doesn't offer it there. Request `GDD*` at daily over the dates you need and sum the days. For a climatological value, request daily across the climatology's start and end years, sum each year's days for the month, season or year, and average those sums across years.
-6. **Annual rows sit inside monthly data.** Monthly results add one annual record per year (`periodKind` `annual`, `month` null, key `YYYY13`), and climatology adds `ANN`. Exclude these rows before averaging or ranking months.
-7. **A regional box spans at least 2° on each axis.** For a smaller area, use a point call. The box returns one parameter per call, so make one call per parameter when you need several.
-8. **Summaries are coarse.** `summaries` aggregate each period kind over the whole window. Comparison buckets are calendar-season means (DJF, MAM, JJA, SON, annual): they don't accumulate and don't follow a growing season. For any other grouping or any sum, compute it from the inline rows or with SQL.
+6. **Design conditions come from NASA too.** For heating and cooling design values (99.6% and 99% heating dry-bulb, 0.4%, 1% and 2% cooling dry-bulb with coincident wet-bulb, dehumidification dew point, enthalpy, n-year extremes), call `nasa_power_get_design_conditions`; don't rebuild design percentiles from hourly `T2M` in SQL. Its monthly `CD_T2M_AVG` is the mean of daily (max+min)/2, so it is not the `T2M` climatology. Its values are metric only.
+7. **Annual rows sit inside monthly data.** Monthly results add one annual record per year (`periodKind` `annual`, `month` null, key `YYYY13`), and climatology adds `ANN`. Exclude these rows before averaging or ranking months.
+8. **A regional box spans at least 2° on each axis.** For a smaller area, use a point call. The box returns one parameter per call, so make one call per parameter when you need several.
+9. **Summaries are coarse.** `summaries` aggregate each period kind over the whole window. Comparison buckets are calendar-season means (DJF, MAM, JJA, SON, annual): they don't accumulate and don't follow a growing season. For any other grouping or any sum, compute it from the inline rows or with SQL.
 
 ## Workflows
 
@@ -48,9 +49,10 @@ Sites that fall in the same cell return identical values. The `returnedCoordinat
 
 | Question | Call |
 |:--|:--|
-| Typical month or year: PV sizing, the calmest month, annual heating load | `nasa_power_get_climatology`. The default period is stated in `metadata.range`. Pass `startYear` with `endYear` for a custom multi-year window, which returns `JAN`…`DEC` plus `ANN` in one small response. |
+| Typical month or year: PV sizing, the calmest month, annual heating load | `nasa_power_get_climatology`. The default period is stated in `metadata.range`. Pass `startYear` with `endYear` for a custom multi-year window spanning at least two calendar years, which returns `JAN`…`DEC` plus `ANN` in one small response. |
+| Heating, cooling and extreme design conditions for HVAC sizing | `nasa_power_get_design_conditions`. Omit the years for the full configured coverage, or pass both. |
 | Specific dates, day-level distributions, seasonal accumulations | `nasa_power_get_timeseries` at daily (or hourly from 2001) |
-| The same question at 2–10 sites | `nasa_power_compare_locations` |
+| The same question at 2–20 sites | `nasa_power_compare_locations` |
 | A spatial pattern | `nasa_power_get_region` |
 
 **PV sizing:** call climatology with community `RE` and `SI_EF_TILTED_SURFACE` (add `ALLSKY_SFC_SW_DWN` for the horizontal baseline). Irradiance arrives in kW-hr/m^2/day, which equals peak sun hours, for horizontal, latitude, latitude ±15°, vertical and optimal tilts. `SI_TILTED_AVG_OPTIMAL_ANG` is the optimal tilt in degrees, and `SI_TILTED_AVG_OPTIMAL_ANG_ORT` is facing text such as `S`.
@@ -61,7 +63,7 @@ Sites that fall in the same cell return identical values. The `returnedCoordinat
 
 Staging is automatic. A data call stages only when the complete response would not fit inline. Smaller results come back inline with `dataset: null`, even when you pass `canvas_id`, and you compute from those rows directly. Where staging isn't available, an oversized result is refused with `canvas_required`. The refusal gives the result's row count, how many rows fit inline, and a list of calls (date or year windows, parameter groups, smaller regions or site groups); send those calls instead, as each fits inline.
 
-Results too large to return inline are staged as a DataCanvas table, and the response carries a `canvas_id`. Call `nasa_power_dataframe_describe` with it and the handle's `table` for column names and provenance before writing SQL (a whole-canvas describe can exceed the response budget, as it does for a wide point selection's two tables), then `nasa_power_dataframe_query` with a read-only query. Pass the same `canvas_id` back to stage further results beside the first; each table expires at the `expiresAt` on its handle.
+Results too large to return inline are staged as a DataCanvas table, and the response carries a `canvas_id`. Call `nasa_power_dataframe_describe` with it and the handle's `table` for column names and provenance before writing SQL (a describe without `table` returns every table on the canvas, up to eight), then `nasa_power_dataframe_query` with a read-only query. Pass the same `canvas_id` back to stage further results beside the first; each table expires at the `expiresAt` on its handle.
 
 - **Dialect.** DuckDB. Reference tables by the exact `power_…` name from the handle.
 - **Observation columns.** `periodKey`, `periodKind`, `date`, `year`, `month`, `hour`, `latitude`, `longitude`, `elevation`, then one column per returned parameter code. Comparison tables add `locationId` and `label`; regional tables add `cellId`.
@@ -70,4 +72,4 @@ Results too large to return inline are staged as a DataCanvas table, and the res
 - **Integer results.** Integer-typed results such as `COUNT` come back as strings. Wrap them in `CAST(… AS INTEGER)` when you need a number; aggregates over measured parameters are numeric.
 - **Shared canvas.** Reuse one `canvas_id` across the data calls in a task. The tables then share a canvas and can be joined in one SELECT, and you don't spend the limited canvas capacity on a fresh canvas per call.
 - **Expiry.** Tables expire. After `canvas_not_found` or `missing_table`, rerun the producing call without the old `canvas_id` (a stale token fails again) to stage the data in a fresh canvas.
-- **Row limit.** `rowLimit` defaults to 100 rows. Aggregate in SQL rather than paging raw rows.
+- **Row limit.** `rowLimit` defaults to 100 rows (at most 1,000) and is the only bound on a page, so a `SELECT *` over many columns returns every column of every row. Aggregate in SQL or project the columns you need rather than paging raw rows.

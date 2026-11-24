@@ -259,6 +259,21 @@ describe('estimate against the bytes a cold call measures', () => {
         selection: T2M,
       },
     ],
+    [
+      'a twelve-site daily-month comparison that defers two',
+      compareLocationsTool,
+      {
+        temporalResolution: 'daily',
+        startDate: '2024-01-01',
+        endDate: '2024-01-31',
+        locations: Array.from({ length: 12 }, (_, i) => ({
+          latitude: 30 + i,
+          longitude: -120,
+          label: `site ${i}`,
+        })),
+        selection: T2M,
+      },
+    ],
   ] as const)('bounds %s from above', async (_shape, tool, args) => {
     const pending = runToolContract(
       tool as Parameters<typeof runToolContract>[0],
@@ -271,5 +286,27 @@ describe('estimate against the bytes a cold call measures', () => {
     /** A cold call reads at least the dictionary body before any observation. */
     expect(call?.measured).toBeGreaterThan(32_317);
     expect(call?.estimate).toBeGreaterThanOrEqual(call?.measured ?? Number.POSITIVE_INFINITY);
+  });
+
+  it('admits a comparison past ten locations at the estimate of the ten it compares', async () => {
+    const args = {
+      temporalResolution: 'daily',
+      startDate: '2024-01-01',
+      endDate: '2024-01-03',
+      locations: Array.from({ length: 20 }, (_, i) => ({
+        latitude: 30 + i,
+        longitude: -120,
+        label: `site ${i}`,
+      })),
+      selection: T2M,
+    };
+    const pending = runToolContract(compareLocationsTool, compareLocationsTool.input.parse(args));
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect((await pending).isError).not.toBe(true);
+    expect(calls.map((call) => call.estimate)).toEqual([
+      estimateComparisonBytes(
+        CompareRequestSchema.parse({ ...args, locations: args.locations.slice(0, 10) }),
+      ),
+    ]);
   });
 });

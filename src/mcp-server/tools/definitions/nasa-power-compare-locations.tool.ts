@@ -3,14 +3,14 @@ import { tool, z } from '@cyanheads/mcp-ts-core';
 import { CanvasIdSchema } from '@cyanheads/mcp-ts-core/canvas';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { formatFaithfully } from '@/services/canvas/format.js';
-import { CompareRequestSchema } from '@/services/power/index.js';
+import { CompareRequestSchema, RECOVERIES } from '@/services/power/index.js';
 import { ComparisonOutputSchema, presentComparison } from './comparison-contracts.js';
 
 /** Compare sites without inventing scientific rankings or unit conversions. */
 export const compareLocationsTool = tool('nasa_power_compare_locations', {
   title: 'Compare NASA POWER locations',
   description:
-    'Compare 2–10 labeled coordinates with a shared parameter selection and window; climatology is the default resolution. Duplicate labels retain separate input-position identities. Returns per-site provenance and valid-only annual/seasonal summaries; operational site failures preserve successes. Optional numeric sort uses observation means, monthly annual records or climatology ANN, with nulls last and stable ties; differing or unknown units cannot sort. Oversized observations and summaries stage completely; summaryDatasets handles and summaryIndex preserve complete ordered summary arrays.',
+    'Compare 2–20 labeled coordinates with a shared parameter selection and window; climatology is the default resolution. One call compares the first 10 locations (the first 9 when 11 arrive) and returns the rest in deferredLocations, ready to send as locations in a second call. Duplicate labels retain separate input-position identities. Returns per-site provenance and valid-only annual/seasonal summaries; operational site failures preserve successes. Optional numeric sort uses observation means, monthly annual records or climatology ANN, with nulls last and stable ties; differing or unknown units cannot sort. Oversized observations and summaries stage completely; summaryDatasets handles and summaryIndex preserve complete ordered summary arrays.',
   annotations: { readOnlyHint: true, openWorldHint: true },
   input: z.discriminatedUnion('temporalResolution', [
     CompareRequestSchema.options[0].extend({
@@ -27,13 +27,20 @@ export const compareLocationsTool = tool('nasa_power_compare_locations', {
     }),
   ]),
   output: ComparisonOutputSchema,
+  enrichment: {
+    notice: z
+      .string()
+      .optional()
+      .describe(
+        'Which input positions were deferred, and how to send deferredLocations as the next call',
+      ),
+  },
   errors: [
     {
       reason: 'invalid_window',
       code: JsonRpcErrorCode.ValidationError,
-      when: 'The requested window is reversed or outside source coverage',
-      recovery:
-        'Use nasa_power_list_reference topic coverage and send an ordered window within the supported period.',
+      when: 'The window is reversed or outside source coverage, or climatology years are unpaired or span under two calendar years',
+      recovery: RECOVERIES.invalid_window,
       thrownBy: 'service',
     },
     {

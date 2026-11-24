@@ -43,6 +43,78 @@ type SummaryTable = {
   columns: ScientificColumn[];
 };
 
+/** Canvas ids are ten characters, so a staged response measured with this one sizes like the real one. */
+const PLACEHOLDER_CANVAS_ID = '0000000000';
+const newTable = () => `power_${randomUUID().replaceAll('-', '')}`;
+
+/** A caller's success notice rides on the response, so every budget check counts it. */
+const withNotice = (notice: string | undefined) => (output: object) =>
+  notice === undefined ? output : { ...output, notice };
+
+/**
+ * Handles for observations staged as `table` beside any related summary tables, and the response
+ * that carries them with a row preview.
+ */
+function staging<T extends PresentableDataset>(
+  dataset: T,
+  table: string,
+  columns: ScientificColumn[],
+  related: SummaryTable[],
+) {
+  const handle = (
+    id: string,
+    expiresAt: string,
+    name: string,
+    rowCount: number,
+    schema: ScientificColumn[],
+  ) => ({
+    canvas_id: id,
+    table: name,
+    rowCount,
+    expiresAt,
+    columns: schema.map((column) => ({ ...column, nullable: column.nullable ?? true })),
+    describeTool: 'nasa_power_dataframe_describe' as const,
+    queryTool: 'nasa_power_dataframe_query' as const,
+  });
+  const relatedHandles = (id: string, expiresAt: string) => {
+    const summaries = related.find((item) => item.key === 'summaries');
+    if (summaries)
+      return {
+        summaryDataset: handle(
+          id,
+          expiresAt,
+          summaries.table,
+          summaries.rows.length,
+          summaries.columns,
+        ),
+      };
+    const buckets = related.find((item) => item.key === 'buckets');
+    const locations = related.find((item) => item.key === 'locations');
+    return buckets && locations
+      ? {
+          summaryDatasets: {
+            buckets: handle(id, expiresAt, buckets.table, buckets.rows.length, buckets.columns),
+            locations: handle(
+              id,
+              expiresAt,
+              locations.table,
+              locations.rows.length,
+              locations.columns,
+            ),
+          },
+        }
+      : {};
+  };
+  const output = (id: string, expiresAt: string, preview: ObservationRow[]) => ({
+    ...dataset,
+    ...relatedHandles(id, expiresAt),
+    rows: preview,
+    rowCount: dataset.rows.length,
+    dataset: handle(id, expiresAt, table, dataset.rows.length, columns),
+  });
+  return { handle, relatedHandles, output };
+}
+
 type TableRecord = {
   bytes: number;
   columns: ScientificColumn[];
@@ -93,6 +165,13 @@ export type PresentOptions = {
   lease?: ProducerLease | undefined;
   /** Sizes the `canvas_required` refusal's split; defaults to the inline row-prefix capacity alone. */
   split?: SplitPlanner;
+  /**
+   * A success notice the caller adds to the response; every inline budget check counts it, and a
+   * `canvas_required` refusal, which replaces that response, appends it to its recovery.
+   */
+  notice?: string | undefined;
+  /** Facts a `canvas_required` refusal carries beside its split, such as inputs left unfetched. */
+  refusal?: Record<string, unknown> | undefined;
 };
 /** Service dependencies; native lifecycle settings are supplied to the framework at startup. */
 export type CanvasServiceOptions = {
@@ -309,16 +388,46 @@ export class CanvasService {
     }
   }
 
-  /** Stage comparison summaries with observations only when the scientific envelope overflows. */
+  /**
+   * Whether `present()` answers with these observations as they are: inline, or staged beside a
+   * one-row preview. When neither fits, a producer with summaries stages those too rather than
+   * refusing.
+   */
+  private observationsFit(dataset: PresentableDataset, notice: string | undefined): boolean {
+    const measured = withNotice(notice);
+    const inline = { ...dataset, rowCount: dataset.rows.length, dataset: null };
+    if (!this.fits(measured({ ...inline, rows: [] }))) return false;
+    if (this.fits(measured(inline))) return true;
+    const { output } = staging(dataset, newTable(), this.columns(dataset), []);
+    return this.fits(
+      measured(
+        output(PLACEHOLDER_CANVAS_ID, new Date(this.now()).toISOString(), dataset.rows.slice(0, 1)),
+      ),
+    );
+  }
+
+  /**
+   * Stage comparison summaries beside the observations when the observations fit neither inline
+   * nor beside a one-row preview. The deferral `notice` counts in every budget check, and a
+   * `canvas_required` refusal carries the dataset's `deferredLocations` when there are any, with
+   * the notice in its recovery.
+   */
   presentComparison<T extends ComparisonDataset & ComparisonShape>(
     dataset: T,
     canvasId: string | undefined,
     ctx: Context,
     sourceTool: string,
     lease?: ProducerLease,
+    notice?: string,
   ) {
-    const options = { lease, split: comparisonSplit(dataset) };
-    if (this.fits({ ...dataset, rows: [], rowCount: dataset.rows.length, dataset: null }))
+    const { deferredLocations } = dataset;
+    const options = {
+      lease,
+      split: comparisonSplit(dataset),
+      notice,
+      refusal: deferredLocations?.length ? { deferredLocations } : undefined,
+    };
+    if (this.observationsFit(dataset, notice))
       return this.present(dataset, canvasId, ctx, sourceTool, options);
     const summaryRows = {
       buckets: dataset.summaries.map((summary, summaryIndex) => ({ ...summary, summaryIndex })),
@@ -343,7 +452,7 @@ export class CanvasService {
     return this.present(compact, canvasId, ctx, sourceTool, options, tables);
   }
 
-  /** Stage complete cross-cell summaries when the no-observation regional envelope overflows. */
+  /** Stage complete cross-cell summaries when the observations fit neither inline nor beside a one-row preview. */
   presentRegion<T extends RegionalSummaryDataset & RegionShape>(
     dataset: T,
     canvasId: string | undefined,
@@ -357,7 +466,7 @@ export class CanvasService {
     });
   }
 
-  /** Stage complete per-column summaries when the no-observation point envelope overflows. */
+  /** Stage complete per-column summaries when the observations fit neither inline nor beside a one-row preview. */
   presentPoint<T extends PowerDataset>(
     dataset: T,
     canvasId: string | undefined,
@@ -372,9 +481,9 @@ export class CanvasService {
   }
 
   /**
-   * Present unchanged when the envelope without observations fits. Otherwise one summary stays
-   * inline beside the exact `summaryCount`, and the complete summaries stage as a related table
-   * ordered by `summaryIndex`. The split planner always sees the complete dataset.
+   * Present unchanged when the observations fit inline or beside a one-row preview. Otherwise one
+   * summary stays inline beside the exact `summaryCount`, and the complete summaries stage as a
+   * related table ordered by `summaryIndex`. The split planner always sees the complete dataset.
    */
   private presentSummarized<T extends PresentableDataset & { summaries: SummaryTable['rows'] }>(
     dataset: T,
@@ -383,7 +492,7 @@ export class CanvasService {
     sourceTool: string,
     options: PresentOptions,
   ) {
-    if (this.fits({ ...dataset, rows: [], rowCount: dataset.rows.length, dataset: null }))
+    if (this.observationsFit(dataset, options.notice))
       return this.present(dataset, canvasId, ctx, sourceTool, options);
     const summaries = this.summaryTable(
       'summaries',
@@ -421,7 +530,7 @@ export class CanvasService {
     const names = new Set(rows.flatMap((row) => Object.keys(row)));
     return {
       key,
-      table: `power_${randomUUID().replaceAll('-', '')}`,
+      table: newTable(),
       rows,
       columns: [...names].map((name) => ({
         name,
@@ -465,78 +574,30 @@ export class CanvasService {
         'Normalized dataset exceeds the analytical workload limit.',
       );
     options.lease?.rowBytes(bytes + relatedBytes);
+    const measured = withNotice(options.notice);
     const inline = { ...dataset, rowCount: dataset.rows.length, dataset: null };
-    if (!related.length && this.fits(inline)) return inline;
-    if (!this.fits({ ...inline, rows: [] }))
+    if (!related.length && this.fits(measured(inline))) return inline;
+    if (!this.fits(measured({ ...inline, rows: [] })))
       throw powerError(
         'dataset_limit',
         'Scientific metadata exceeds the complete response budget.',
       );
     const columns = this.columns(dataset);
-    const table = `power_${randomUUID().replaceAll('-', '')}`;
-    const handle = (
-      id: string,
-      expiresAt: string,
-      name: string,
-      rowCount: number,
-      schema: ScientificColumn[],
-    ) => ({
-      canvas_id: id,
-      table: name,
-      rowCount,
-      expiresAt,
-      columns: schema.map((column) => ({ ...column, nullable: column.nullable ?? true })),
-      describeTool: 'nasa_power_dataframe_describe' as const,
-      queryTool: 'nasa_power_dataframe_query' as const,
-    });
-    const relatedHandles = (id: string, expiresAt: string) => {
-      const summaries = related.find((item) => item.key === 'summaries');
-      if (summaries)
-        return {
-          summaryDataset: handle(
-            id,
-            expiresAt,
-            summaries.table,
-            summaries.rows.length,
-            summaries.columns,
-          ),
-        };
-      const buckets = related.find((item) => item.key === 'buckets');
-      const locations = related.find((item) => item.key === 'locations');
-      return buckets && locations
-        ? {
-            summaryDatasets: {
-              buckets: handle(id, expiresAt, buckets.table, buckets.rows.length, buckets.columns),
-              locations: handle(
-                id,
-                expiresAt,
-                locations.table,
-                locations.rows.length,
-                locations.columns,
-              ),
-            },
-          }
-        : {};
-    };
-    const output = (id: string, expiresAt: string, preview: ObservationRow[]) => ({
-      ...dataset,
-      ...relatedHandles(id, expiresAt),
-      rows: preview,
-      rowCount: dataset.rows.length,
-      dataset: handle(id, expiresAt, table, dataset.rows.length, columns),
-    });
+    const table = newTable();
+    const { handle, relatedHandles, output } = staging(dataset, table, columns, related);
     const preview = this.preview(dataset.rows, (rows) =>
-      output('0000000000', new Date(this.now()).toISOString(), rows),
+      measured(output(PLACEHOLDER_CANVAS_ID, new Date(this.now()).toISOString(), rows)),
     );
     const canvas = this.canvas;
     if (!canvas) {
       const rowCount = dataset.rows.length;
       const split = (options.split ?? prefixSplit(dataset))((output) => this.fits(output));
+      const recovery = splitRecovery(rowCount, split);
       throw canvasError(
         'canvas_required',
         'This complete dataset requires an analytical workspace.',
-        splitRecovery(rowCount, split),
-        { rowCount, inlineRows: split.inlineRows, calls: split.calls },
+        options.notice === undefined ? recovery : `${recovery} ${options.notice}`,
+        { rowCount, inlineRows: split.inlineRows, ...options.refusal, calls: split.calls },
       );
     }
     await this.reconcile();
@@ -564,35 +625,9 @@ export class CanvasService {
               columns,
             ),
           });
-        for (const name of [table, ...related.map((item) => item.table)]) {
-          const staged = this.registration(record, name);
-          Object.assign(staged.provenance.envelope, references);
-          const count =
-            name === table
-              ? dataset.rows.length
-              : related.find((item) => item.table === name)?.rows.length;
-          if (
-            related.length > 0 &&
-            !this.fits({
-              canvas_id: instance.canvasId,
-              expiresAt: instance.expiresAt,
-              tables: [
-                {
-                  table: name,
-                  rowCount: count,
-                  expiresAt: expiry(instance, info),
-                  columns: staged.columns,
-                  provenance: staged.provenance,
-                },
-              ],
-            })
-          )
-            throw powerError(
-              'dataset_limit',
-              'Complete single-table provenance exceeds the response budget.',
-            );
-        }
-        if (!this.fits(output(instance.canvasId, expiry(instance, info), preview)))
+        for (const name of [table, ...related.map((item) => item.table)])
+          Object.assign(this.registration(record, name).provenance.envelope, references);
+        if (!this.fits(measured(output(instance.canvasId, expiry(instance, info), preview))))
           throw powerError(
             'dataset_limit',
             'The complete staged response exceeds the response budget.',
@@ -609,10 +644,16 @@ export class CanvasService {
     }
   }
 
-  /** Inspect only the supplied canvas, including original scientific provenance. */
+  /**
+   * Inspect only the supplied canvas, including original scientific provenance. A whole-canvas
+   * describe returns every active table; the per-canvas table cap bounds its size.
+   */
   describe(canvasId: string, input: { table?: string }, ctx: Context) {
     return this.operate(canvasId, ctx, async (instance, record) => {
-      const tables = await instance.describe(input.table ? { tableName: input.table } : undefined);
+      const tables = await instance.describe({
+        ...(input.table ? { tableName: input.table } : {}),
+        signal: ctx.signal,
+      });
       if (input.table && !tables.length)
         throw canvasError('missing_table', 'The requested table is absent.');
       const described = [];
@@ -631,11 +672,12 @@ export class CanvasService {
           table: info.name,
           rowCount: info.rowCount,
           expiresAt: info.expiresAt ?? null,
-          columns: info.columns.map((column) => {
-            const scientific = staged.columns.find((item) => item.name === column.name);
+          columns: info.columns.map(({ name, type, nullable }) => {
+            const scientific = staged.columns.find((item) => item.name === name);
             return {
-              ...column,
-              nullable: column.nullable ?? true,
+              name,
+              type,
+              nullable: nullable ?? true,
               ...(scientific?.units === undefined ? {} : { units: scientific.units }),
               ...(scientific?.valueKind === undefined ? {} : { valueKind: scientific.valueKind }),
             };
@@ -643,24 +685,16 @@ export class CanvasService {
           provenance,
         });
       }
-      const output = { canvas_id: canvasId, expiresAt: instance.expiresAt, tables: described };
-      if (!this.fits(output))
-        throw canvasError(
-          'query_limit',
-          'Table provenance exceeds the complete response budget.',
-          'Specify one table with nasa_power_dataframe_describe, or narrow the request to the producing tool and stage a smaller dataset.',
-        );
-      return output;
+      return { canvas_id: canvasId, expiresAt: instance.expiresAt, tables: described };
     });
   }
 
-  /** Run one bounded read-only SELECT; cancellation waits for native completion. */
+  /**
+   * Run one read-only SELECT. The effective row limit and the query deadline bound the result;
+   * the tool's input schema rejects oversized SQL and non-positive or fractional row limits.
+   * Cancellation waits for native completion.
+   */
   async query(canvasId: string, input: { sql: string; rowLimit?: number }, ctx: Context) {
-    if (
-      input.sql.length > POWER_LIMITS.sqlCharacters ||
-      (input.rowLimit !== undefined && (!Number.isInteger(input.rowLimit) || input.rowLimit < 1))
-    )
-      throw canvasError('query_limit', 'SQL length or row limit exceeds the query bound.');
     const rowLimit = Math.min(input.rowLimit ?? 100, POWER_LIMITS.queryRows);
     const notice =
       input.rowLimit !== undefined && input.rowLimit > rowLimit
@@ -690,8 +724,6 @@ export class CanvasService {
           truncated: result.truncated ?? false,
           countSemantics: result.truncated ? 'materialized_prefix' : 'exact',
         });
-        if (!this.fits(output, notice))
-          throw canvasError('query_limit', 'Projected SQL values exceed the response budget.');
         if (notice) ctx.enrich.notice(notice);
         return output;
       });
@@ -810,12 +842,11 @@ export class CanvasService {
     return schema;
   }
 
-  private fits(output: object, notice?: string): boolean {
+  /** Whether a producing response's structured JSON and rendered text each fit the inline budget. */
+  private fits(output: object): boolean {
     return (
-      JSON.stringify(notice === undefined ? output : { ...output, notice }).length <=
-        POWER_LIMITS.inlineCharacters &&
-      formatFaithfully(output).reduce((sum, block) => sum + block.text.length, 0) +
-        (notice === undefined ? 0 : `\n\n> ${notice}`.length) <=
+      JSON.stringify(output).length <= POWER_LIMITS.inlineCharacters &&
+      formatFaithfully(output).reduce((sum, block) => sum + block.text.length, 0) <=
         POWER_LIMITS.inlineCharacters
     );
   }

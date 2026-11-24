@@ -1,4 +1,36 @@
 /** @fileoverview Deterministic offline NASA POWER upstream that answers any requested window, point, box and code list. @module tests/fake-power */
+import { readFile } from 'node:fs/promises';
+
+/**
+ * Captured upstream bodies under `tests/fixtures/`, read at import: a read inside the fake fetch
+ * would be real I/O racing a fake-timer advance.
+ */
+export const fixture = async <T = Record<string, unknown>>(name: string): Promise<T> =>
+  JSON.parse(await readFile(new URL(`./fixtures/${name}`, import.meta.url), 'utf8'));
+/** POWER's January-first reading of one `{"1".."12"}` object; an absent month is null. */
+export const monthValues = (record: unknown) =>
+  Array.from({ length: 12 }, (_, index) => (record as Record<string, number>)[index + 1] ?? null);
+const INDICATORS_CONFIGURATION = await fixture('design-conditions-configuration.json');
+const SEATTLE_DESIGN_CONDITIONS = await fixture('design-conditions-seattle-2020-2024.json');
+
+/** Provenance headers POWER sent with the captured Indicators response; its body carries neither. */
+export const INDICATORS_HEADERS = {
+  'x-app-version': 'v2.9.3',
+  'x-data-sources': 'SRB,SYN1DEG,MERRA2,POWER',
+} as const;
+
+/** The captured Seattle 2020–2024 design conditions, metadata echoing the requested point and years. */
+function designConditions(query: URLSearchParams): Response {
+  const payload = structuredClone(SEATTLE_DESIGN_CONDITIONS);
+  payload.metadata = {
+    ...(payload.metadata as object),
+    lat: Number(query.get('latitude')),
+    lon: Number(query.get('longitude')),
+    start: Number(query.get('start')),
+    end: Number(query.get('end')),
+  };
+  return Response.json(payload, { headers: INDICATORS_HEADERS });
+}
 
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 const DAY_MS = 86_400_000;
@@ -83,10 +115,11 @@ export function streamedBody(bytes: number, end: 'error' | { status: number }): 
 }
 
 /**
- * Fake fetch: dictionaries list `codes`, configurations are empty, and observations cover exactly
- * the requested window, coordinates and codes. `requests` records every observation URL.
- * `dictionaryBytes` pads each resolution's dictionary body to a measured real size with one
- * filler entry, so a cold call reads reference bytes like the live service.
+ * Fake fetch: dictionaries list `codes`, temporal configurations are empty, and observations cover
+ * exactly the requested window, coordinates and codes. The Indicators API answers with its captured
+ * configuration and the captured Seattle design conditions. `requests` records every observation
+ * and design-conditions URL. `dictionaryBytes` pads each resolution's dictionary body to a measured
+ * real size with one filler entry, so a cold call reads reference bytes like the live service.
  */
 export function fakePower(
   codes: string[],
@@ -103,6 +136,12 @@ export function fakePower(
   const fetch = async (input: string | URL | Request): Promise<Response> => {
     const url = new URL(input instanceof Request ? input.url : String(input));
     if (url.hostname !== 'power.larc.nasa.gov') throw new Error(`Unexpected host ${url.hostname}`);
+    if (url.pathname === '/api/application/indicators/configuration')
+      return Response.json(INDICATORS_CONFIGURATION);
+    if (url.pathname === '/api/application/indicators/point') {
+      requests.push(url);
+      return designConditions(url.searchParams);
+    }
     if (url.pathname.endsWith('/parameters'))
       return Response.json(dictionary(url.searchParams.get('temporal') ?? ''));
     if (url.pathname.endsWith('/configuration')) return Response.json({});

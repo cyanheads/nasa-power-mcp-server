@@ -43,5 +43,8 @@ export function sizedRefusal(result: WireResult, rowCount: number): SizedRefusal
   expect(lines).toEqual(
     error.data.calls.map((call, index) => `calls[${index}]: ${JSON.stringify(call)}`),
   );
+  /** Each call is a code span in the raw text, so a caller copies it without escapes. */
+  for (const call of error.data.calls)
+    expect(text.join('\n')).toContain(`\`${JSON.stringify(call)}\``);
   return { rowCount, inlineRows: error.data.inlineRows, calls: error.data.calls };
 }

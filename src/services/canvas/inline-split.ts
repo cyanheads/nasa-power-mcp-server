@@ -368,20 +368,58 @@ export function regionSplit<T extends RegionShape>(dataset: T): SplitPlanner {
   };
 }
 
+/** Sites whose returned series match exactly for every listed parameter. */
+type SharedGridCell = { parameters: string[]; locations: string[] };
+
+/**
+ * One entry per distinct location set of two or more sites, listing every parameter whose matching
+ * sites form exactly that set. `classes` holds one set of matching sites per parameter, in `sites`
+ * order. Parameters follow `codes`; entries follow their first location in `sites`, then their
+ * first parameter in `codes`.
+ */
+export function sharedGridCells(
+  classes: { parameter: string; locations: string[] }[],
+  codes: string[],
+  sites: string[],
+): SharedGridCell[] {
+  const entries = new Map<string, SharedGridCell>();
+  for (const code of codes)
+    for (const { parameter, locations } of classes) {
+      if (parameter !== code || locations.length < 2) continue;
+      const key = locations.join('\n');
+      const entry = entries.get(key) ?? { parameters: [], locations };
+      entry.parameters.push(code);
+      entries.set(key, entry);
+    }
+  const position = (order: string[], [first]: string[]) => order.indexOf(first ?? '');
+  return [...entries.values()].sort(
+    (a, b) =>
+      position(sites, a.locations) - position(sites, b.locations) ||
+      position(codes, a.parameters) - position(codes, b.parameters),
+  );
+}
+
 /** Comparison fields the split reads; every other envelope field is carried as-is. */
 export type ComparisonShape = {
   request: WindowRequest & { locations: object[] };
   metadata: { endpointUrls: string[] } & Record<string, unknown>;
+  parameters: { code: string }[];
   locations: { locationId: string; metadata: { endpointUrl: string } }[];
   failed: { locationId: string }[];
+  deferredLocations?: object[] | undefined;
   summaries: { locationId: string; year: number | null }[];
-  possibleSharedGridCell: string[][];
+  possibleSharedGridCell: SharedGridCell[];
   rows: ObservationRow[];
 };
 
-/** Comparison split by date or year window, then by contiguous groups of at least two input sites. */
+/**
+ * Comparison split by date or year window, then by contiguous groups of at least two compared
+ * sites. Each call re-sends compared sites only, so it defers nothing and its response carries no
+ * `deferredLocations`.
+ */
 export function comparisonSplit<T extends ComparisonShape>(dataset: T): SplitPlanner {
   return (fits) => {
+    const { deferredLocations: _deferred, ...envelope } = dataset;
     const { request } = dataset;
     const window = windowUnits(request);
     const buckets = byUnit(dataset.rows, window.units, window.rowUnit);
@@ -389,6 +427,8 @@ export function comparisonSplit<T extends ComparisonShape>(dataset: T): SplitPla
       location,
       id: `location_${index + 1}`,
     }));
+    const order = sites.map((site) => site.id);
+    const codes = dataset.parameters.map((parameter) => parameter.code);
     const layouts: Layout[] = [];
     for (let groups = 1; sites.length / groups >= 2; groups++) {
       const members = balanced(sites.length, groups).map(({ start, count }) =>
@@ -415,7 +455,7 @@ export function comparisonSplit<T extends ComparisonShape>(dataset: T): SplitPla
             patch,
             rows: rows.length,
             output: {
-              ...dataset,
+              ...envelope,
               request: { ...request, ...patch },
               metadata: {
                 ...dataset.metadata,
@@ -429,9 +469,16 @@ export function comparisonSplit<T extends ComparisonShape>(dataset: T): SplitPla
                   ids.has(summary.locationId) &&
                   (!sliced || summary.year === null || years.has(summary.year)),
               ),
-              possibleSharedGridCell: dataset.possibleSharedGridCell
-                .map((shared) => shared.filter((id) => ids.has(id)))
-                .filter((shared) => shared.length > 1),
+              possibleSharedGridCell: sharedGridCells(
+                dataset.possibleSharedGridCell.flatMap(({ parameters, locations }) =>
+                  parameters.map((parameter) => ({
+                    parameter,
+                    locations: locations.filter((id) => ids.has(id)),
+                  })),
+                ),
+                codes,
+                order,
+              ),
               rows,
               rowCount: rows.length,
               dataset: null,

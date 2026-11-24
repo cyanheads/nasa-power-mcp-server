@@ -346,8 +346,6 @@ it('stages every summary of a wide hour-group climatology as a related table bes
       { table: handle.table },
       fixture.ctx,
     );
-    expect(JSON.stringify(described).length).toBeLessThanOrEqual(40000);
-    expect(formatFaithfully(described)[0]?.text.length).toBeLessThanOrEqual(40000);
     expect(described.tables[0]?.provenance.envelope).toMatchObject({
       summaryCount: 116,
       summaries: expected.slice(0, 1),

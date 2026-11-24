@@ -334,7 +334,7 @@ it('stages every native-grid row while preserving typed cell identity and comple
     expect(data.rows.length).toBeGreaterThan(0);
     expect(data.rows.length).toBeLessThan(400);
     expect(data.dataset.rowCount).toBe(400);
-    const rendered = getRegionTool.format!(output)
+    const rendered = getRegionTool.format!(getRegionTool.output!.parse(output))
       .flatMap((block) => (block.type === 'text' ? [block.text] : []))
       .join('\n');
     for (const value of [

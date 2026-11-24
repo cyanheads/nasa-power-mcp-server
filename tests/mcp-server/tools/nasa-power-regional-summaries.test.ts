@@ -3,7 +3,6 @@ import { readFile } from 'node:fs/promises';
 import { runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { getRegionTool } from '@/mcp-server/tools/definitions/nasa-power-get-region.tool.js';
-import { formatFaithfully } from '@/services/canvas/format.js';
 import { initCanvasService } from '@/services/canvas/index.js';
 import { initPowerService } from '@/services/power/index.js';
 import { normalizeRegion, RegionPayloadSchema } from '@/services/power/normalize.js';
@@ -154,10 +153,6 @@ it('stages all annual observations and ordered exact summaries through both tool
       { table: handle.table },
       fixture.ctx,
     );
-    expect(JSON.stringify(described).length).toBeLessThanOrEqual(40000);
-    expect(
-      formatFaithfully(described).reduce((sum, block) => sum + block.text.length, 0),
-    ).toBeLessThanOrEqual(40000);
     expect(described.tables[0]?.provenance.envelope).toMatchObject({
       summaryCount: 366,
       summaryDataset: { table: summary.table },

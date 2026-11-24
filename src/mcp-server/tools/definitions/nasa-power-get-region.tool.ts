@@ -8,6 +8,7 @@ import { estimateRegionBytes } from '@/services/canvas/producer-estimate.js';
 import {
   DatasetHandleSchema,
   getPowerService,
+  RECOVERIES,
   RegionalDatasetSchema,
   RegionRequestSchema,
 } from '@/services/power/index.js';
@@ -56,16 +57,15 @@ export const getRegionTool = tool('nasa_power_get_region', {
       reason: 'invalid_window',
       code: JsonRpcErrorCode.ValidationError,
       when: 'The requested window is reversed or outside source coverage',
-      recovery:
-        'Use nasa_power_list_reference topic coverage and send an ordered window. Omit year fields for regional climatology; use nasa_power_get_climatology for custom point years.',
+      recovery: RECOVERIES.invalid_window,
       thrownBy: 'service',
     },
     {
       reason: 'invalid_correction',
       code: JsonRpcErrorCode.ValidationError,
-      when: 'Correction inputs are unsupported or missing required dependencies',
+      when: 'The parameter is a point-only correction, PSC or WSC',
       recovery:
-        'Use nasa_power_list_reference topic wind_surfaces and supply both windElevation and windSurface for corrected wind speed.',
+        'Request WS10M or WS50M instead of WSC, or PS instead of PSC, for the region; corrected values need nasa_power_get_timeseries or nasa_power_get_climatology at a point.',
       thrownBy: 'service',
     },
     {

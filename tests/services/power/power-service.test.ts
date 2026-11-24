@@ -1,10 +1,12 @@
 /** @fileoverview POWER service behavior at the HTTP boundary. @module tests/services/power/power-service */
+import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { ErrorHandler } from '@cyanheads/mcp-ts-core/utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { POWER_LIMITS } from '@/config/server-config.js';
 import { createPowerService, type PowerService } from '@/services/power/power-service.js';
 import { PowerRequestSchema, RegionRequestSchema } from '@/services/power/types.js';
-import { streamedBody } from '../../fake-power.js';
+import { fakePower, INDICATORS_HEADERS, streamedBody } from '../../fake-power.js';
 
 const daily = (extra = {}) =>
   PowerRequestSchema.parse(
@@ -100,8 +102,8 @@ describe('PowerService HTTP contract', () => {
     await vi.advanceTimersByTimeAsync(5000);
     const result = await resultPromise;
     expect(fetcher.mock.calls.map((call) => String(call[0]))).toEqual([
-      'https://power.larc.nasa.gov/api/system/manager/parameters?community=RE&temporal=daily',
       'https://power.larc.nasa.gov/api/temporal/daily/configuration',
+      'https://power.larc.nasa.gov/api/system/manager/parameters?community=RE&temporal=daily',
       'https://power.larc.nasa.gov/api/temporal/daily/point?parameters=T2M%2CPSC%2CWSC&community=RE&format=JSON&units=metric&time-standard=LST&start=19820101&end=19820102&latitude=47&longitude=-122&site-elevation=0&wind-elevation=50&wind-surface=airportice',
     ]);
     for (const call of fetcher.mock.calls)
@@ -227,33 +229,121 @@ describe('PowerService HTTP contract', () => {
         ...years,
       };
       await expect(service(fetcher).region(input, createMockContext())).rejects.toMatchObject({
-        data: { reason: 'invalid_window' },
-        message: expect.stringContaining('nasa_power_get_climatology'),
+        data: {
+          reason: 'invalid_window',
+          recovery: {
+            hint: 'Omit startYear and endYear for the region, or use nasa_power_get_climatology for custom years at a point.',
+          },
+        },
+        message:
+          'Regional climatology uses the precomputed source period and accepts no year fields.',
       });
       expect(fetcher).not.toHaveBeenCalled();
     },
   );
-  it.each([
-    [{ endDate: '1981-12-31' }, 'invalid_window'],
-    [{ endDate: '2027-01-01' }, 'invalid_window'],
-    [{ windElevation: 10 }, 'invalid_correction'],
-    [{ selection: { mode: 'parameters', parameters: ['PSC'] } }, 'invalid_correction'],
-    [
-      {
+  /** The recovery every range refusal carries; its message states the range. */
+  const inRange = 'Resend the request with dates or years inside the range this error states.';
+  const yearsOf = (
+    temporalResolution: 'monthly' | 'climatology',
+    window: { startYear?: number; endYear?: number },
+  ) => ({ temporalResolution, startDate: undefined, endDate: undefined, ...window });
+  const span = {
+    reason: 'invalid_window',
+    message:
+      'Climatology years must span at least two calendar years, with startYear before endYear.',
+    hint: 'Resend with endYear after startYear, or omit both years to use the source product range.',
+  };
+  it.each<{ extra: object; reason: string; message?: string; hint?: string }>([
+    {
+      extra: { endDate: '1981-12-31' },
+      reason: 'invalid_window',
+      message:
+        'Daily dates must fall within 1981-01-01 to 2026-10-19, with startDate on or before endDate.',
+      hint: inRange,
+    },
+    {
+      extra: { endDate: '2027-01-01' },
+      reason: 'invalid_window',
+      message: 'Daily dates must fall within 1981-01-01 to 2026-10-19.',
+      hint: inRange,
+    },
+    {
+      extra: { temporalResolution: 'hourly', startDate: '2000-12-31', endDate: '2001-01-01' },
+      reason: 'invalid_window',
+      message: 'Hourly dates must fall within 2001-01-01 to 2026-10-19.',
+      hint: inRange,
+    },
+    {
+      extra: yearsOf('monthly', { startYear: 2020, endYear: 2027 }),
+      reason: 'invalid_window',
+      message: 'Monthly years must fall within 1981 to 2026.',
+      hint: inRange,
+    },
+    {
+      extra: yearsOf('monthly', { startYear: 2021, endYear: 2020 }),
+      reason: 'invalid_window',
+      message: 'Monthly years must fall within 1981 to 2026, with startYear on or before endYear.',
+      hint: inRange,
+    },
+    { extra: yearsOf('climatology', { startYear: 2020, endYear: 2020 }), ...span },
+    { extra: yearsOf('climatology', { startYear: 2021, endYear: 2020 }), ...span },
+    {
+      extra: yearsOf('climatology', { startYear: 2020 }),
+      reason: 'invalid_window',
+      message: 'Climatology startYear and endYear must be sent together.',
+      hint: 'Send both startYear and endYear, or omit both to use the source product range.',
+    },
+    { extra: { windElevation: 10 }, reason: 'invalid_correction' },
+    {
+      extra: { selection: { mode: 'parameters', parameters: ['PSC'] } },
+      reason: 'invalid_correction',
+    },
+    {
+      extra: {
         temporalResolution: 'hourly',
         startDate: '2024-01-01',
         endDate: '2024-01-01',
         selection: { mode: 'preset', preset: 'building_hvac' },
       },
-      'unsupported_preset',
-    ],
-  ])('rejects invalid preparation before HTTP: %j', async (extra, reason) => {
+      reason: 'unsupported_preset',
+    },
+  ])('rejects invalid preparation before HTTP: %j', async ({ extra, reason, message, hint }) => {
     const fetcher = vi.fn<typeof fetch>();
     await expect(service(fetcher).point(daily(extra), createMockContext())).rejects.toMatchObject({
-      data: { reason, recovery: { hint: expect.any(String) } },
+      message: message ?? expect.any(String),
+      data: { reason, recovery: { hint: hint ?? expect.any(String) } },
     });
     expect(fetcher).not.toHaveBeenCalled();
   });
+  it.each(['WSC', 'PSC'])(
+    'refuses regional %s before any request with a regional recovery',
+    async (parameter) => {
+      const fetcher = vi.fn<typeof fetch>();
+      const request = RegionRequestSchema.parse({
+        temporalResolution: 'monthly',
+        latitudeMin: 40,
+        latitudeMax: 43,
+        longitudeMin: -90,
+        longitudeMax: -87,
+        parameter,
+        startYear: 2020,
+        endYear: 2020,
+      });
+      await expect(service(fetcher).region(request, createMockContext())).rejects.toMatchObject({
+        message: `Regional requests do not support ${parameter}, a point-only correction.`,
+        data: {
+          reason: 'invalid_correction',
+          recovery: {
+            hint:
+              parameter === 'WSC'
+                ? 'Request WS10M or WS50M for the region, or use nasa_power_get_timeseries or nasa_power_get_climatology with windElevation and windSurface at a point.'
+                : 'Request PS for the region, or use nasa_power_get_timeseries or nasa_power_get_climatology with siteElevation at a point.',
+          },
+        },
+      });
+      expect(fetcher).not.toHaveBeenCalled();
+    },
+  );
   it('retains pre-1984 solar rejection messages without retry', async () => {
     const fetcher = vi.fn<typeof fetch>(async (url) =>
       String(url).includes('/point?')
@@ -272,29 +362,117 @@ describe('PowerService HTTP contract', () => {
     });
     expect(fetcher).toHaveBeenCalledTimes(3);
   });
-  it('rejects climatology outside the configured product year window', async () => {
-    const fetcher = vi.fn<typeof fetch>(async (url) =>
+  /** A fetcher whose product configuration reports `settings`; point observations are empty. */
+  const configured = (settings: object) =>
+    vi.fn<typeof fetch>(async (url) =>
       String(url).endsWith('/configuration')
-        ? Response.json({ settings: { start: '1984-01-01', end: '2025-12-31' } })
+        ? Response.json({ settings })
         : String(url).includes('/point?')
           ? Response.json({ ...point, properties: { parameter: {} } })
           : respond(url),
     );
-    const pending = service(fetcher)
-      .point(
-        daily({
-          temporalResolution: 'climatology',
-          startDate: undefined,
-          endDate: undefined,
-          startYear: 2026,
-          endYear: 2026,
-        }),
-        createMockContext(),
-      )
+  it.each([
+    [
+      'climatology years ending past',
+      yearsOf('climatology', { startYear: 2025, endYear: 2026 }),
+      { start: '1984-01-01', end: '2025-12-31' },
+      'Climatology years must fall within 1984 to 2025.',
+    ],
+    [
+      'climatology years starting before',
+      yearsOf('climatology', { startYear: 1982, endYear: 1990 }),
+      { start: '1984-01-01T00:00:00', end: '2025-12-31T00:00:00' },
+      'Climatology years must fall within 1984 to 2025.',
+    ],
+    [
+      'daily dates starting before',
+      { startDate: '1985-01-01', endDate: '1985-01-02' },
+      { start: '1990-01-01T00:00:00', end: '2026-10-18T00:00:00' },
+      'Daily dates must fall within 1990-01-01 to 2026-10-18.',
+    ],
+    [
+      'daily dates starting before an end-less',
+      { startDate: '1985-01-01', endDate: '1985-01-02' },
+      { start: '1990-01-01T00:00:00' },
+      'Daily dates must fall within 1990-01-01 to 2026-10-19.',
+    ],
+  ])(
+    'refuses %s the configured product window after its configuration request alone',
+    async (_label, extra, settings, message) => {
+      const fetcher = configured(settings);
+      const pending = service(fetcher)
+        .point(daily(extra), createMockContext())
+        .catch((error) => error);
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(await pending).toMatchObject({
+        message,
+        data: { reason: 'invalid_window', recovery: { hint: inRange } },
+      });
+      expect(fetcher.mock.calls.map(([url]) => new URL(String(url)).pathname)).toEqual([
+        expect.stringMatching(/\/configuration$/),
+      ]);
+    },
+  );
+  it('bounds climatology by the configured end year, not the current year', async () => {
+    const fetcher = configured({ start: '1981-01-01T00:00:00', end: '2030-12-31T00:00:00' });
+    const instance = service(fetcher);
+    const accepted = instance.point(
+      daily(yearsOf('climatology', { startYear: 2028, endYear: 2030 })),
+      createMockContext(),
+    );
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(await accepted).toMatchObject({ request: { startYear: 2028, endYear: 2030 } });
+    expect(new URL(String(fetcher.mock.calls.at(-1)?.[0])).searchParams.get('end')).toBe('2030');
+    const refused = instance
+      .point(daily(yearsOf('climatology', { startYear: 2029, endYear: 2031 })), createMockContext())
       .catch((error) => error);
     await vi.advanceTimersByTimeAsync(5000);
-    expect(await pending).toMatchObject({ data: { reason: 'invalid_window' } });
-    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(await refused).toMatchObject({
+      message: 'Climatology years must fall within 1981 to 2030.',
+      data: { reason: 'invalid_window' },
+    });
+  });
+  /** Each window sits on a bound; settings take POWER's live midnight-timestamp shape. */
+  it.each([
+    [
+      'a daily window ending on the current UTC date',
+      { startDate: '2026-10-18', endDate: '2026-10-19' },
+      { start: '1981-01-01T00:00:00', end: '2026-10-19T00:00:00' },
+      'start=20261018&end=20261019',
+    ],
+    [
+      'an hourly window ending on the current UTC date',
+      { temporalResolution: 'hourly', startDate: '2026-10-19', endDate: '2026-10-19' },
+      { start: '2001-01-01T00:00:00', end: '2026-10-19T00:00:00' },
+      'start=20261019&end=20261019',
+    ],
+    [
+      'a monthly window ending in the current year',
+      yearsOf('monthly', { startYear: 2026, endYear: 2026 }),
+      { start: '1981-01-01T00:00:00', end: '2026-12-31T00:00:00' },
+      'start=2026&end=2026',
+    ],
+    [
+      'a daily window starting on the configured first day',
+      { startDate: '1981-01-01', endDate: '1981-01-02' },
+      { start: '1981-01-01T00:00:00', end: '2026-10-19T00:00:00' },
+      'start=19810101&end=19810102',
+    ],
+    [
+      'a climatology spanning exactly the configured years',
+      yearsOf('climatology', { startYear: 1981, endYear: 2025 }),
+      { start: '1981-01-01T00:00:00', end: '2025-12-31T00:00:00' },
+      'start=1981&end=2025',
+    ],
+  ])('accepts %s and requests it', async (_label, extra, settings, query) => {
+    const fetcher = configured(settings);
+    const pending = service(fetcher)
+      .point(daily(extra), createMockContext())
+      .catch((error) => error);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(await pending).toMatchObject({ rows: [] });
+    expect(String(fetcher.mock.calls.at(-1)?.[0])).toContain(`/point?`);
+    expect(String(fetcher.mock.calls.at(-1)?.[0])).toContain(query);
   });
   it('expires data after ten minutes while retaining reference caches', async () => {
     const fetcher = vi.fn<typeof fetch>(async (url) => respond(url));
@@ -400,6 +578,8 @@ describe('PowerService HTTP contract', () => {
     const ctx = createMockContext();
     const outcome = await instance.dictionary('RE', 'daily', ctx).catch((error) => error);
     expect(outcome).toMatchObject({ data: { reason: 'upstream_rate_limited', retryAfter: '5' } });
+    /** A comparison copies the message into `failed[].message`, its only carrier of the delay. */
+    expect(outcome.message).toMatch(/retryAfter[\s\S]*5/);
     expect(fetcher).toHaveBeenCalledTimes(1);
     const pending = instance.dictionary('SB', 'daily', ctx);
     await vi.advanceTimersByTimeAsync(4999);
@@ -407,6 +587,97 @@ describe('PowerService HTTP contract', () => {
     await vi.advanceTimersByTimeAsync(1);
     await pending;
     expect(starts[1]! - starts[0]!).toBeGreaterThanOrEqual(5000);
+  });
+  describe('a NASA 5xx on both attempts', () => {
+    async function exhausted(status = 503) {
+      const fetcher = vi.fn<typeof fetch>(async (url) =>
+        String(url).includes('/point?')
+          ? Response.json({ messages: ['Service temporarily unavailable'] }, { status })
+          : respond(url),
+      );
+      const outcome = service(fetcher)
+        .point(daily(), createMockContext())
+        .catch((error) => error);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(fetcher.mock.calls.filter(([url]) => String(url).includes('/point?'))).toHaveLength(2);
+      return outcome;
+    }
+    it('keeps the status, NASA messages and attempt count in data', async () => {
+      expect(await exhausted()).toMatchObject({
+        code: JsonRpcErrorCode.ServiceUnavailable,
+        data: {
+          status: 503,
+          messages: ['Service temporarily unavailable'],
+          retryAttempts: 2,
+        },
+      });
+    });
+    it('states the attempt count on its own line and leaves NASA text and data free of the internal operation', async () => {
+      const error = await exhausted();
+      expect(error.message).toBe(
+        'NASA POWER HTTP 503.\nstatus: 503\nmessages[0]: Service temporarily unavailable\nretryAttempts: 2',
+      );
+      expect(error.data).not.toHaveProperty('operation');
+    });
+    it("keeps the attempt's code: a 504 on both attempts stays a Timeout", async () => {
+      expect(await exhausted(504)).toMatchObject({
+        code: JsonRpcErrorCode.Timeout,
+        data: { status: 504, retryAttempts: 2 },
+      });
+    });
+  });
+  describe('a body read that fails on both attempts with an error that is not an McpError', () => {
+    /** The first bytes arrive, then the read rejects with `failure()`, on every data attempt. */
+    async function exhausted(failure: () => Error) {
+      const fetcher = vi.fn<typeof fetch>(async (url) => {
+        if (!String(url).includes('/point?')) return respond(url);
+        let sent = false;
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            pull(controller) {
+              if (sent) controller.error(failure());
+              else {
+                sent = true;
+                controller.enqueue(new TextEncoder().encode('{"type":'));
+              }
+            },
+          }),
+        );
+      });
+      const outcome = service(fetcher)
+        .point(daily(), createMockContext())
+        .catch((error) => error);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(fetcher.mock.calls.filter(([url]) => String(url).includes('/point?'))).toHaveLength(2);
+      return outcome;
+    }
+    /** Each keeps the code the framework classifies its bare failure as. */
+    it.each([
+      /** What a stalled body throws once the attempt's own timeout aborts the read. */
+      [
+        'the attempt timeout',
+        () => new DOMException('The operation was aborted due to timeout', 'TimeoutError'),
+        JsonRpcErrorCode.Timeout,
+      ],
+      [
+        'a connection cut mid-body',
+        () => new TypeError('terminated'),
+        JsonRpcErrorCode.InternalError,
+      ],
+    ])(
+      'states %s and the attempt count on its own line, free of the internal operation',
+      async (_shape, failure, code) => {
+        const error = await exhausted(failure);
+        expect(error).toBeInstanceOf(McpError);
+        expect(error).toMatchObject({
+          code,
+          message: `${failure().message}\nretryAttempts: 2`,
+          data: { retryAttempts: 2 },
+        });
+        expect(code).toBe(ErrorHandler.determineErrorCode(failure()));
+        expect(error.data).not.toHaveProperty('operation');
+      },
+    );
   });
   it('bounds decoded bodies regardless of Content-Length', async () => {
     const fetcher = vi.fn<typeof fetch>(
@@ -498,6 +769,29 @@ describe('PowerService HTTP contract', () => {
       message: expect.stringContaining('deadline exceeded'),
     });
     expect(fetcher).not.toHaveBeenCalled();
+  });
+  it('reports the retry clock expiring first as the call deadline, without an internal label', async () => {
+    const fetcher = vi.fn<typeof fetch>(
+      async (_url, options) =>
+        new Promise<Response>((_resolve, reject) => {
+          options?.signal?.addEventListener('abort', () => reject(options.signal?.reason), {
+            once: true,
+          });
+        }),
+    );
+    const instance = service(fetcher);
+    const ctx = createMockContext();
+    /** Fake time drives the retry clock; the budget's own timeout signal runs on real time, so it fires second. */
+    const budget = instance.createCallBudget(ctx, false, { deadlineMs: 5_000 });
+    const pending = instance.dictionary('RE', 'daily', ctx, budget).catch((error) => error);
+    await vi.advanceTimersByTimeAsync(6_000);
+    const error = await pending;
+    expect(error).toMatchObject({
+      code: JsonRpcErrorCode.Timeout,
+      message: 'NASA POWER call deadline exceeded.',
+    });
+    expect(error.data?.reason).toBeUndefined();
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
   it('sheds callers exceeding the bounded queue and settles pending work on disposal', async () => {
     const fetcher = vi.fn<typeof fetch>(
@@ -673,8 +967,8 @@ describe('codes POWER lists but does not serve at a resolution', () => {
       await vi.advanceTimersByTimeAsync(5000);
       await expect(pending).resolves.toBeUndefined();
       expect(listing.mock.calls.map(([url]) => new URL(String(url)).pathname)).toEqual([
-        '/api/system/manager/parameters',
         `/api/temporal/${resolution}/configuration`,
+        '/api/system/manager/parameters',
       ]);
     },
   );
@@ -686,5 +980,65 @@ describe('codes POWER lists but does not serve at a resolution', () => {
     );
     await vi.advanceTimersByTimeAsync(5000);
     await expect(pending).resolves.toBeUndefined();
+  });
+});
+
+describe('provenance headers held with a cached body', () => {
+  const input = { latitude: 47.61, longitude: -122.33, startYear: 2020, endYear: 2024 };
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-23T00:00:00Z'));
+  });
+  afterEach(() => {
+    for (const instance of services) instance.dispose();
+    services = [];
+    vi.useRealTimers();
+  });
+  /** One call advanced past the pacer's start gaps. */
+  async function call(instance: PowerService) {
+    const pending = instance.designConditions(input, createMockContext());
+    await vi.advanceTimersByTimeAsync(5000);
+    return pending;
+  }
+
+  it('reports the cold response headers again on a cache hit', async () => {
+    const fake = fakePower([]);
+    const instance = service(fake.fetch);
+    const cold = await call(instance);
+    const hit = await call(instance);
+    expect(fake.requests).toHaveLength(1);
+    expect(hit.metadata).toMatchObject({
+      cacheHit: true,
+      fetchedAt: cold.metadata.fetchedAt,
+      api: { version: INDICATORS_HEADERS['x-app-version'] },
+      sources: ['SRB', 'SYN1DEG', 'MERRA2', 'POWER'],
+    });
+    expect(hit.metadata.api).toEqual(cold.metadata.api);
+  });
+
+  it('replaces the headers with the body once the data TTL expires', async () => {
+    const fake = fakePower([]);
+    let version = 'v2.9.3';
+    const instance = service(async (url) => {
+      const response = await fake.fetch(url);
+      if (!new URL(String(url)).pathname.endsWith('/indicators/point')) return response;
+      return new Response(response.body, { headers: { 'x-app-version': version } });
+    });
+    expect((await call(instance)).metadata.api).toEqual({
+      name: 'POWER Indicators API',
+      version: 'v2.9.3',
+    });
+    version = 'v2.9.4';
+    await vi.advanceTimersByTimeAsync(POWER_LIMITS.dataTtlMs);
+    const refreshed = await call(instance);
+    const hit = await call(instance);
+    expect(fake.requests).toHaveLength(2);
+    expect([refreshed.metadata.cacheHit, hit.metadata.cacheHit]).toEqual([false, true]);
+    expect([refreshed.metadata.api.version, hit.metadata.api.version]).toEqual([
+      'v2.9.4',
+      'v2.9.4',
+    ]);
+    /** That response named no sources, so neither the fresh nor the cached result invents them. */
+    expect([refreshed.metadata.sources, hit.metadata.sources]).toEqual([undefined, undefined]);
   });
 });

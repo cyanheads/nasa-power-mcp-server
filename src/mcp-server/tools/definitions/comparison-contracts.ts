@@ -5,9 +5,11 @@ import { z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 import { POWER_LIMITS } from '@/config/server-config.js';
 import { getCanvasService, SummaryDatasetsSchema } from '@/services/canvas/index.js';
+import { sharedGridCells } from '@/services/canvas/inline-split.js';
 import { estimateComparisonBytes } from '@/services/canvas/producer-estimate.js';
 import {
   type CompareRequest,
+  ComparisonLocationSchema,
   DatasetHandleSchema,
   describePowerError,
   getPowerService,
@@ -67,7 +69,7 @@ const LocationSchema = IdentitySchema.extend(PowerDatasetSchema.omit({ rows: tru
 /** Full per-site provenance survives analytical staging. */
 export const ComparisonOutputSchema = z.object({
   request: NormalizedCompareRequestSchema.describe(
-    'Normalized shared request and original location order',
+    'Normalized shared request and the compared locations in input order',
   ),
   metadata: z
     .object({
@@ -83,8 +85,14 @@ export const ComparisonOutputSchema = z.object({
     .describe('Successful locations in input or explicit metric order'),
   failed: z
     .array(FailureSchema.describe('Failed or unscheduled location'))
-    .describe('Operational failures in original input order'),
-  partial: z.boolean().describe('Whether any requested location failed'),
+    .describe('Operational failures of compared locations in input order'),
+  partial: z.boolean().describe('Whether any compared location failed'),
+  deferredLocations: z
+    .array(ComparisonLocationSchema)
+    .optional()
+    .describe(
+      'Input locations after the compared ones, exactly as sent and in input order, ready to send as locations in a second call; present only when locations were deferred',
+    ),
   summaries: z
     .array(BucketSchema.describe('One valid-only annual or seasonal bucket'))
     .describe('Independent per-location calendar summaries'),
@@ -108,10 +116,21 @@ export const ComparisonOutputSchema = z.object({
   possibleSharedGridCell: z
     .array(
       z
-        .array(z.string().describe('Location identity'))
-        .describe('Locations with identical complete values and elevation'),
+        .object({
+          parameters: z
+            .array(z.string().describe('Numeric parameter code'))
+            .describe('Numeric parameters, in response order, whose series match at these sites'),
+          locations: z
+            .array(z.string().describe('Location identity'))
+            .describe('Two or more sites in input order'),
+        })
+        .describe(
+          'Sites whose returned series match exactly, nulls included, for every listed parameter',
+        ),
     )
-    .describe('Possible shared-grid notice only; coordinates are not asserted grid centers'),
+    .describe(
+      'Sites that likely read one grid cell for the listed parameters, so they are indistinguishable on them rather than equal results. Solar and meteorology use different grids. Covers only the sites in this response; a parameter with fewer than two distinct valid values in the window is not checked. Coordinates are not asserted grid centers',
+    ),
   rows: z
     .array(ObservationRowSchema.describe('One original period with location identity'))
     .describe('Complete observations or bounded preview when staged'),
@@ -122,7 +141,12 @@ export const ComparisonOutputSchema = z.object({
   ),
 });
 
-/** Sequential sites share references, pacing, attempts, decoded bytes and deadline. */
+/**
+ * Sequential sites share references, pacing, attempts, decoded bytes and deadline. Only the first
+ * `POWER_LIMITS.comparedLocations` inputs are compared (one fewer when that would leave a single one); the
+ * rest return as `deferredLocations` with a notice, and admission, fetching, the request echo and
+ * any inline split see only the compared sites.
+ */
 export function presentComparison(
   request: CompareRequest,
   canvasId: string | undefined,
@@ -132,15 +156,23 @@ export function presentComparison(
     request.selection.parameters = [...new Set(request.selection.parameters)];
   if (request.windSurface === 'airport_ice' || request.windSurface === 'airport ice')
     request.windSurface = 'airportice';
+  const { comparedLocations } = POWER_LIMITS;
+  const count =
+    request.locations.length === comparedLocations + 1 ? comparedLocations - 1 : comparedLocations;
+  const compared = { ...request, locations: request.locations.slice(0, count) };
+  const deferredLocations = request.locations.slice(count);
+  const notice = deferredLocations.length
+    ? `Input locations ${count + 1}–${request.locations.length} were not compared: one call compares at most ${comparedLocations} and leaves at least two for the next. Send deferredLocations as locations in a second call with every other argument unchanged, and pass the canvas_id this response returned, if any, to keep both calls' tables on one canvas. That call numbers its sites from location_1, so match sites across calls by label; sort order and possibleSharedGridCell cover only one call's sites.`
+    : undefined;
   const canvas = getCanvasService();
-  return canvas.withProducer(estimateComparisonBytes(request), ctx, async (producerCtx, lease) => {
+  return canvas.withProducer(estimateComparisonBytes(compared), ctx, async (producerCtx, lease) => {
     const power = getPowerService();
     const budget = power.createCallBudget(producerCtx, true, {
       deadlineMs: lease.remainingMs(),
       onHeldBytes: lease.bodyBytes,
     });
     const callCtx = { ...producerCtx, signal: budget.signal };
-    const { locations: inputs, sort, ...shared } = request;
+    const { locations: inputs, sort, ...shared } = compared;
     const first = inputs[0];
     if (!first) throw new Error('Validated comparison has no locations');
     const pointRequest = (location: { latitude: number; longitude: number }): PowerRequest => ({
@@ -160,7 +192,8 @@ export function presentComparison(
     const summaries: z.infer<typeof BucketSchema>[] = [];
     const parameters = new Map<string, ParameterMetadata>();
     const units = new Map<string, Set<string | undefined>>();
-    const fingerprints = new Map<string, string[]>();
+    /** Per numeric parameter: series fingerprint → matching sites in input order. */
+    const matches = new Map<string, Map<string, string[]>>();
     let rowBytes = 2;
     let stopped: McpError | undefined;
     for (const [index, location] of inputs.entries()) {
@@ -219,39 +252,27 @@ export function presentComparison(
       }
       lease.rowBytes(rowBytes);
       summaries.push(...summarizeBuckets(dataset, identity.locationId));
-      const numeric = dataset.parameters.filter((parameter) => parameter.valueKind === 'number');
-      if (
-        dataset.rows.length &&
-        !dataset.omittedParameters.length &&
-        numeric.length &&
-        dataset.rows.every(
-          (row) =>
-            row.elevation !== null &&
-            dataset.parameters.every(
-              (parameter) => row[parameter.code] !== null && row[parameter.code] !== undefined,
-            ),
-        )
-      ) {
-        const hash = createHash('sha256');
-        for (const row of dataset.rows) {
-          callCtx.signal.throwIfAborted();
-          hash.update(
-            JSON.stringify([
-              row.periodKey,
-              row.periodKind,
-              row.elevation,
-              ...dataset.parameters.map((parameter) => [
-                parameter.code,
-                parameter.units,
-                row[parameter.code],
-              ]),
-            ]),
-          );
-        }
-        const fingerprint = hash.digest('hex');
-        const matches = fingerprints.get(fingerprint) ?? [];
-        matches.push(identity.locationId);
-        fingerprints.set(fingerprint, matches);
+      /**
+       * A site's series for one numeric parameter (units, period keys, values with fill as null)
+       * is its fingerprint for that parameter. Elevation is left out: it names only the meteorology
+       * cell. A series with fewer than two distinct valid values carries no cell identity.
+       */
+      const periods = createHash('sha256')
+        .update(dataset.rows.map((row) => row.periodKey).join('\n'))
+        .digest('hex');
+      for (const parameter of dataset.parameters) {
+        if (parameter.valueKind !== 'number') continue;
+        callCtx.signal.throwIfAborted();
+        const values = dataset.rows.map((row) => row[parameter.code]);
+        const reference = values.find((value) => value !== null);
+        if (!values.some((value) => value !== null && value !== reference)) continue;
+        const fingerprint = createHash('sha256')
+          .update(JSON.stringify([parameter.units ?? null, periods]))
+          .update(values.join(','))
+          .digest('hex');
+        const classes = matches.get(parameter.code) ?? new Map<string, string[]>();
+        classes.set(fingerprint, [...(classes.get(fingerprint) ?? []), identity.locationId]);
+        matches.set(parameter.code, classes);
       }
       const metric = sort
         ? dataset.summaries.filter(
@@ -312,9 +333,9 @@ export function presentComparison(
             : (sort.direction === 'asc' ? 1 : -1) * (a.sortMetric - b.sortMetric),
       );
     callCtx.signal.throwIfAborted();
-    return canvas.presentComparison(
+    const output = await canvas.presentComparison(
       {
-        request,
+        request: compared,
         metadata: {
           fetchedAt: new Date().toISOString(),
           endpointUrls: locations.map((location) => location.metadata.endpointUrl),
@@ -334,6 +355,7 @@ export function presentComparison(
         locations,
         failed,
         partial: failed.length > 0,
+        ...(deferredLocations.length ? { deferredLocations } : {}),
         summaries,
         comparable: [...units.keys()].every(comparableMetric),
         sort: sort
@@ -349,13 +371,22 @@ export function presentComparison(
               ties: 'input_order' as const,
             }
           : null,
-        possibleSharedGridCell: [...fingerprints.values()].filter((group) => group.length > 1),
+        possibleSharedGridCell: sharedGridCells(
+          [...matches].flatMap(([parameter, classes]) =>
+            [...classes.values()].map((locations) => ({ parameter, locations })),
+          ),
+          [...parameters.keys()],
+          inputs.map((_, index) => `location_${index + 1}`),
+        ),
         rows,
       },
       canvasId,
       callCtx,
       'nasa_power_compare_locations',
       lease,
+      notice,
     );
+    if (notice) ctx.enrich.notice(notice);
+    return output;
   });
 }

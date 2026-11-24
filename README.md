@@ -1,7 +1,7 @@
 <div align="center">
   <h1>@cyanheads/nasa-power-mcp-server</h1>
   <p><b>Query NASA POWER solar, wind, building, and agroclimatology data via MCP. STDIO or Streamable HTTP.</b>
-  <div>9 Tools</div>
+  <div>10 Tools</div>
   </p>
 </div>
 
@@ -29,7 +29,7 @@
 
 ## Overview
 
-[NASA POWER](https://power.larc.nasa.gov/) historical solar and meteorological observations for renewable energy, sustainable buildings and agroclimatology. Retrieve point time series and climatology, inspect native-grid regions, and compare labeled locations with source units and provenance. No NASA account or API key is required.
+[NASA POWER](https://power.larc.nasa.gov/) historical solar and meteorological observations for renewable energy, sustainable buildings and agroclimatology. Retrieve point time series, climatology and design conditions, inspect native-grid regions, and compare labeled locations with source units and provenance. No NASA account or API key is required.
 
 ### Tools
 
@@ -37,21 +37,22 @@
 |:---|:---|
 | `nasa_power_get_timeseries` | Hourly, daily or monthly observations at one point |
 | `nasa_power_get_climatology` | Monthly and annual point climatology, including tilted solar profiles |
+| `nasa_power_get_design_conditions` | ASHRAE-style heating, cooling and extreme design conditions at one point |
 | `nasa_power_get_region` | One parameter across a bounded native-grid region |
-| `nasa_power_compare_locations` | Shared observations and seasonal summaries for 2–10 labeled points |
+| `nasa_power_compare_locations` | Shared observations and seasonal summaries for 2–20 labeled points |
 | `nasa_power_search_parameters` | Search the complete community/resolution parameter dictionary |
 | `nasa_power_list_reference` | Presets, communities, coverage, missing values, wind surfaces and dataframe guidance |
 | `nasa_power_dataframe_describe` | Inspect staged schemas, units, expiry and provenance |
 | `nasa_power_dataframe_query` | Run bounded read-only SQL against an explicit canvas token |
 | `nasa_power_dataframe_drop` | Opt-in removal of one named staged table |
 
-Eight tools are enabled by default; `NASA_POWER_DATAFRAME_DROP_ENABLED=true` enables the ninth.
+Nine tools are enabled by default; `NASA_POWER_DATAFRAME_DROP_ENABLED=true` enables the tenth.
 
 ### Skills
 
 | Skill | Description |
 |:---|:---|
-| `nasa-power-guide` | Which tool answers a typical-month versus a dated question, grid-cell size, data freshness, rate versus total units, degree days, the one-data-call-at-a-time gate, and SQL over staged tables |
+| `nasa-power-guide` | Which tool answers a typical-month, dated or design-condition question, grid-cell size, data freshness, rate versus total units, degree days, the one-data-call-at-a-time gate, and SQL over staged tables |
 
 The skill ships in `skills/nasa-power-guide/SKILL.md`. Plugin hosts load it from the package, and MCP clients that support the Skills extension read it from the server as `skill://nasa-power-guide/SKILL.md`.
 
@@ -62,22 +63,32 @@ The skill ships in `skills/nasa-power-guide/SKILL.md`. Plugin hosts load it from
 - `latitude` / `longitude` and `temporalResolution`: `hourly` and `daily` take an inclusive `startDate` / `endDate`, `monthly` takes `startYear` / `endYear`. `selection` is a named `preset` (default `solar_pv`) or explicit `parameters`, at most 15 effective codes hourly and 20 otherwise, corrections included.
 - `community` (`RE`, `SB`, `AG`; default `RE`), `units` (`metric`, `imperial`) and `timeStandard` (`LST`, `UTC`). Optional `siteElevation` adds `PSC`; paired `windElevation` (10–300 meters) and `windSurface` add `WSC`. Use `nasa_power_list_reference` topic `wind_surfaces` for all 17 canonical NASA aliases, including `airportgrass`, `airportice` and `vegtype_1`; vegetation underscores are retained.
 - Returns `metadata`, `parameters`, `expansions`, `omittedParameters`, `summaries`, `rows`, an exact `rowCount` and `dataset` (null unless staged). Optional `canvas_id` reuses a canvas when staging is needed.
-- When the response still overflows the budget without its observations (wide selections with hour-of-day groups), the summaries stage beside the observations as `summaryDataset`; `summaries` keeps one entry and `summaryCount` gives the exact total. Query the table in `summaryIndex` order; SQL `units: null` restores an omitted source unit.
+- When the observations fit neither inline nor as a one-row preview beside the rest of the response (wide selections with hour-of-day groups), the summaries stage beside the observations as `summaryDataset`; `summaries` keeps one entry and `summaryCount` gives the exact total. Query the table in `summaryIndex` order; SQL `units: null` restores an omitted source unit.
 - Codes NASA lists but does not serve at the requested resolution (`GDD*` at monthly and climatology, `*_HR_MAX` and `*_HR_MIN` at monthly) fail with `unsupported_parameter` before any data request, naming the codes and the resolution that serves them. This holds for every data tool.
+- A window that is reversed or outside the product's coverage fails with `invalid_window` before any data request, and the message states the range in force. This holds for every data tool. Monthly and climatology years before 1981 are rejected earlier, by the input schema's minimum.
 
 ---
 
 ### `nasa_power_get_climatology` <sub>tool</sub>
 
-- Point coordinates with the same selection and corrections; optional `startYear` and `endYear` together, otherwise the source product range. No `temporalResolution` input.
+- Point coordinates with the same selection and corrections; optional `startYear` and `endYear` together, covering at least two calendar years, otherwise the source product range. No `temporalResolution` input.
 - Small profiles remain inline; larger profiles return a bounded preview and complete `dataset` handle, and oversized summaries stage as `summaryDataset` with an exact `summaryCount`, as in `nasa_power_get_timeseries`. Pass optional `canvas_id` to reuse an existing workspace. Without DuckDB, an oversized result is refused with `canvas_required`, which lists calls that each fit inline: parameter groups for a wide selection.
 - Group codes list only their actually returned members in `expansions`, on every data tool: `SI_EF_TILTED_SURFACE` and the distinct `SI_TILTED_AVG`, `SI_TILTED_MIN`, `SI_TILTED_MAX` groups (numeric angles and N/S orientation text included), the `SI_TRACKER_AVG`, `SI_TRACKER_MIN`, `SI_TRACKER_MAX` groups, hour-of-day `*_HR` groups (members `*_00` … `*_23`, monthly and climatology) and `*_HR_MAX` / `*_HR_MIN` groups (members `*_00_MAX` … `*_23_MAX`, climatology). A group is omitted only when none of its members return.
 
 ---
 
+### `nasa_power_get_design_conditions` <sub>tool</sub>
+
+- `latitude` / `longitude`; optional `startYear` and `endYear` together, or omit both for POWER's full configured coverage (2001 onward). Years must fall within the Climate Indicators configuration and span at least its minimum period, or the call fails with `invalid_window` stating the range in force, without a data request. There is no `units` input: values are metric.
+- Returns `request` (the years sent), `metadata` (endpoint, access time, `api`, `sources`, the period NASA computed, returned coordinates and elevation, timezone offset, standard pressure and reported units), `indicators` (scalar values) and `monthly` (twelve values, January first). Each entry carries its POWER `code`, report `section`, `label` and `units`; keys the server does not catalogue come last with those fields null. Fill values and absent months are null.
+- `CD_T2M_AVG` is the monthly mean of daily (max + min) / 2, so it is not interchangeable with the `T2M` climatology. `CD_RADIATION_AVG` and `CD_RADIATION_STD` are in kW-hr/m^2/day although POWER labels them W m-2.
+- No `canvas_id`: the result is small enough to return inline.
+
+---
+
 ### `nasa_power_get_region` <sub>tool</sub>
 
-- One `parameter` over ordered `latitudeMin` / `latitudeMax` and `longitudeMin` / `longitudeMax`, each axis spanning 2–10 degrees (`invalid_region` otherwise); split antimeridian regions into separate calls. `temporalResolution` is `daily`, `monthly` or `climatology`; point corrections are unsupported.
+- One `parameter` over ordered `latitudeMin` / `latitudeMax` and `longitudeMin` / `longitudeMax`, each axis spanning 2–10 degrees (`invalid_region` otherwise); split antimeridian regions into separate calls. `temporalResolution` is `daily`, `monthly` or `climatology`. `PSC` and `WSC` are point-only corrections: requesting either fails with `invalid_correction`, and the hint names the uncorrected parameter to request or the point tools that serve the corrected one.
 - Daily regions require date bounds and monthly regions require year bounds. Regional climatology accepts no year fields and reports the source's precomputed period; use `nasa_power_get_climatology` for a custom point year window.
 - Returns cell-tagged `rows`, `cellCount` and per-period `summaries` with equal-weight cell `min` / `mean` / `max`, not area-weighted. Optional `canvas_id` reuses a canvas for staging.
 - Oversized summary envelopes return `summaryDataset` with all cross-cell summaries, exact `summaryCount` and a whole-record inline preview. Query the table in `summaryIndex` order; SQL `units: null` restores an omitted source unit. Observations and summaries register together and retain linked provenance.
@@ -86,8 +97,10 @@ The skill ships in `skills/nasa-power-guide/SKILL.md`. Plugin hosts load it from
 
 ### `nasa_power_compare_locations` <sub>tool</sub>
 
-- 2–10 `locations`, each with coordinates and a `label` of 1–120 characters, sharing one selection, corrections and window. `temporalResolution` defaults to `climatology`; `hourly`, `daily` and `monthly` also work.
-- Returns successful `locations` with per-site provenance, location-tagged `rows`, annual and calendar-season `summaries`, and `failed` entries with `partial: true` when some sites fail; all-site failure returns `all_locations_failed`. `possibleSharedGridCell` flags sites that may share a grid cell.
+- 2–20 `locations`, each with coordinates and a `label` of 1–120 characters, sharing one selection, corrections and window. `temporalResolution` defaults to `climatology`; `hourly`, `daily` and `monthly` also work.
+- One call compares the first 10 locations (the first 9 when 11 arrive) and returns the rest in `deferredLocations`, exactly as sent; the field appears only when locations were deferred. Send them as `locations` with every other argument unchanged, and the returned `canvas_id` to keep both calls' tables together. Sites renumber from `location_1` in each call, so match them across calls by `label`.
+- Returns successful `locations` with per-site provenance, location-tagged `rows`, annual and calendar-season `summaries`, and `failed` entries with `partial: true` when some sites fail; all-site failure returns `all_locations_failed`. `failed` and the `request` echo cover the compared sites only.
+- `possibleSharedGridCell` is a list of `{ parameters, locations }` groups: sites whose series match exactly, nulls included, for every listed parameter, so they likely read one grid cell. Grouping is per parameter because solar and meteorology use different grids; a parameter with fewer than two distinct valid values is not checked. Groups cover one call's sites.
 - Optional `sort` (`parameter`, `direction` `asc` / `desc`) orders by a selected numeric parameter with known identical units. Optional `canvas_id` reuses a canvas for staging.
 - When summaries exceed the response budget, `summaryDatasets.buckets` and `summaryDatasets.locations` point to complete SQL tables; inline summaries become whole-record previews and each location includes `summaryCount`. Query in `summaryIndex` order; the location-summary table includes `locationId`. SQL `units: null` represents an omitted source unit, not a known unit.
 
@@ -110,15 +123,15 @@ The skill ships in `skills/nasa-power-guide/SKILL.md`. Plugin hosts load it from
 
 ### `nasa_power_dataframe_describe` <sub>tool</sub>
 
-- Required `canvas_id` from a producing response; optional `table` limits inspection to one table.
+- Required `canvas_id` from a producing response; optional `table` limits inspection to one table, otherwise every active table on the canvas (at most eight) is returned.
 - Returns canvas and table expiry, SQL columns with source units, and original scientific `provenance`. Only tables in the supplied canvas are visible.
 
 ---
 
 ### `nasa_power_dataframe_query` <sub>tool</sub>
 
-- Required `canvas_id` and one read-only SELECT in `sql` (up to 16,384 characters); positive integer `rowLimit` defaults to 100 and is capped at 1,000, with an effective-cap notice for larger requests. Files, writes and system catalogs are denied.
-- Returns `columns`, `rows`, `rowCount`, `shownCount`, `truncated` and `countSemantics` (`exact` or `materialized_prefix`). SQL has a 10-second deadline; the structured and rendered outputs each must fit 40,000 characters.
+- Required `canvas_id` and one read-only SELECT in `sql` (up to 16,384 characters); positive integer `rowLimit` defaults to 100 and is capped at 1,000, with an effective-cap notice for larger requests. Files, writes and system catalogs are denied, and so is a column alias or CTE named like a DuckDB metadata view (`duckdb_tables`, `pg_class`).
+- Returns `columns`, `rows`, `rowCount`, `shownCount`, `truncated` and `countSemantics` (`exact` or `materialized_prefix`). SQL has a 10-second deadline, and `rowLimit` is the only bound on the page: choose a narrower projection or a smaller limit when the output would be large.
 - SQL mistakes retain bounded identifiers or conversion values with recovery guidance. Operational failures use generic messages; engine paths and native causes are excluded.
 
 ---
@@ -199,7 +212,7 @@ Unset, blank and whole-value placeholder settings retain these defaults. Invalid
 
 ### Local development
 
-Requires [Bun v1.4.0](https://bun.sh/) or higher (or Node.js v24+).
+Requires [Bun v1.4.4](https://bun.sh/) or higher (or Node.js v24+).
 
 - **Clone and install:**
 
@@ -239,11 +252,11 @@ The image defaults to HTTP on port 3010 in stateless session mode and logs to `/
 
 | Path | Purpose |
 |:---|:---|
-| `src/index.ts` | Nine tool registrations, the published skill tree, bounded canvas setup and service shutdown |
+| `src/index.ts` | Ten tool registrations, the published skill tree, bounded canvas setup and service shutdown |
 | `skills` | The `nasa-power-guide` agent skill, published to plugin hosts and served over MCP |
 | `src/config` | Workload limits and server-specific environment parsing |
 | `src/mcp-server/tools/definitions` | Tool contracts and comparison orchestration |
-| `src/services/power` | Paced NASA client, normalization, presets and scientific summaries |
+| `src/services/power` | Paced NASA client, normalization, presets, design-condition labels and scientific summaries |
 | `src/services/canvas` | Explicit-token staging, SQL, provenance and admission limits |
 | `scripts` | Build, validation, packaging and release tooling |
 | `tests` | Offline contracts and native integration tests |

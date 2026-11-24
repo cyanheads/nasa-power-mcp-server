@@ -3,6 +3,7 @@ import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { createInMemoryStorage, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { POWER_LIMITS } from '@/config/server-config.js';
+import { getDesignConditionsTool } from '@/mcp-server/tools/definitions/nasa-power-get-design-conditions.tool.js';
 import { getTimeseriesTool } from '@/mcp-server/tools/definitions/nasa-power-get-timeseries.tool.js';
 import { searchParametersTool } from '@/mcp-server/tools/definitions/nasa-power-search-parameters.tool.js';
 import { initCanvasService } from '@/services/canvas/index.js';
@@ -24,7 +25,7 @@ afterEach(async () => {
   vi.useRealTimers();
 });
 
-it.each(['dictionary', 'configuration', 'observations'] as const)(
+it.each(['dictionary', 'configuration', 'Indicators configuration', 'observations'] as const)(
   'returns actionable recovery for oversized %s without relaxing the body cap',
   async (endpoint) => {
     const padding = 'x'.repeat(POWER_LIMITS.bodyBytes + 1);
@@ -34,10 +35,11 @@ it.each(['dictionary', 'configuration', 'observations'] as const)(
         return Response.json({
           T2M: { definition: endpoint === 'dictionary' ? padding : 'Temperature' },
         });
+      /** Temporal and Indicators (`/api/application/indicators/configuration`) alike. */
       if (url.pathname.endsWith('/configuration'))
         return Response.json({
           settings: { start: '1981-01-01' },
-          documentation: { description: endpoint === 'configuration' ? padding : 'Coverage' },
+          documentation: { description: endpoint.endsWith('configuration') ? padding : 'Coverage' },
         });
       return Response.json({
         type: 'Feature',
@@ -53,13 +55,15 @@ it.each(['dictionary', 'configuration', 'observations'] as const)(
     const pending =
       endpoint === 'dictionary'
         ? runToolContract(searchParametersTool, { filter: 'T2M', limit: 1 })
-        : runToolContract(getTimeseriesTool, {
-            latitude: 47,
-            longitude: -122,
-            startDate: '2024-01-01',
-            endDate: '2024-01-01',
-            selection: { mode: 'parameters', parameters: ['T2M'] },
-          });
+        : endpoint === 'Indicators configuration'
+          ? runToolContract(getDesignConditionsTool, { latitude: 47, longitude: -122 })
+          : runToolContract(getTimeseriesTool, {
+              latitude: 47,
+              longitude: -122,
+              startDate: '2024-01-01',
+              endDate: '2024-01-01',
+              selection: { mode: 'parameters', parameters: ['T2M'] },
+            });
     await vi.advanceTimersByTimeAsync(6000);
     const result = await pending;
     expect(result.isError).toBe(true);
@@ -78,9 +82,7 @@ it.each(['dictionary', 'configuration', 'observations'] as const)(
       .join('\n');
     expect(rendered).toContain(hint);
     expect(rendered).toContain('dataset_limit');
-    expect(fetcher).toHaveBeenCalledTimes(
-      endpoint === 'dictionary' ? 1 : endpoint === 'configuration' ? 2 : 3,
-    );
+    expect(fetcher).toHaveBeenCalledTimes(endpoint === 'observations' ? 3 : 1);
     if (endpoint === 'observations') {
       expect(hint).toMatch(/narrow.*date window/i);
     } else {

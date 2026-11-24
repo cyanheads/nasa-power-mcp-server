@@ -125,10 +125,19 @@ export const listReferenceTool = tool('nasa_power_list_reference', {
           description:
             'Hourly coverage begins in 2001. Endpoint dates include every source hour; LST labels have no UTC offset.',
         },
+        {
+          code: 'design_conditions',
+          earliestDate: '2001-01-01',
+          /** nasa_power_get_design_conditions takes no temporalResolution. */
+          resolutions: [],
+          description:
+            'nasa_power_get_design_conditions covers whole calendar years from 2001 to the end year the Indicators configuration reports, over a period of at least 5 years; omitted years request that full coverage, and a refused window states the range in force.',
+        },
       );
       guidance.push(
+        'Daily and hourly windows end at the current UTC date, monthly windows at the current month, and climatology at the end year its product configuration reports; a refused window states the range in force.',
         'Recent records can be missing because release latency differs by product; current dates are allowed without guaranteeing valid observations.',
-        'Monthly annual keys and climatology ANN remain separate from monthly records. Custom point climatology years must be paired and within current product configuration. Regional climatology accepts no year fields and reports its precomputed source period; use nasa_power_get_climatology for custom point years.',
+        'Monthly annual keys and climatology ANN remain separate from monthly records. Custom point climatology years must be paired, span at least two calendar years and end within current product configuration. Regional climatology accepts no year fields and reports its precomputed source period; use nasa_power_get_climatology for custom point years.',
       );
     } else if (topic === 'missing_data') {
       entries.push(
@@ -203,10 +212,13 @@ export const listReferenceTool = tool('nasa_power_list_reference', {
     }
     return {
       topic,
-      verifiedOn: '2026-10-28',
+      verifiedOn: '2026-11-23',
       documentationUrls: [
         'https://power.larc.nasa.gov/docs/services/api/',
         'https://power.larc.nasa.gov/docs/methodology/',
+        ...(topic === 'coverage'
+          ? ['https://power.larc.nasa.gov/docs/services/api/application/indicators/']
+          : []),
       ],
       entries,
       guidance,

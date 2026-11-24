@@ -1,16 +1,25 @@
 /** @fileoverview Geographic contracts through the real HTTP and presentation seams. @module tests/mcp-server/tools/nasa-power-geographic */
+
+import { readFile } from 'node:fs/promises';
 import {
   createInMemoryStorage,
   createMockContext,
   runToolContract,
 } from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ComparisonOutputSchema } from '@/mcp-server/tools/definitions/comparison-contracts.js';
 import { compareLocationsTool } from '@/mcp-server/tools/definitions/nasa-power-compare-locations.tool.js';
 import { getRegionTool } from '@/mcp-server/tools/definitions/nasa-power-get-region.tool.js';
+import { formatFaithfully } from '@/services/canvas/format.js';
 import { initCanvasService } from '@/services/canvas/index.js';
-import { initPowerService } from '@/services/power/index.js';
+import {
+  initPowerService,
+  type ObservationRow,
+  PowerDatasetSchema,
+} from '@/services/power/index.js';
 import { fakePower } from '../../fake-power.js';
 import { markdownText } from '../../markdown-text.js';
+import { nativeFixture } from '../../services/canvas/fixture.js';
 import { sizedRefusal } from '../../sized-refusal.js';
 
 const selection = { mode: 'parameters' as const, parameters: ['T2M'] };
@@ -447,6 +456,39 @@ describe('geographic HTTP contracts', () => {
     );
     expect(fetcher).not.toHaveBeenCalled();
   });
+  it.each([
+    [
+      'WSC',
+      'Request WS10M or WS50M for the region, or use nasa_power_get_timeseries or nasa_power_get_climatology with windElevation and windSurface at a point.',
+    ],
+    [
+      'PSC',
+      'Request PS for the region, or use nasa_power_get_timeseries or nasa_power_get_climatology with siteElevation at a point.',
+    ],
+  ])(
+    'refuses regional %s with a regional recovery on both surfaces before any request',
+    async (parameter, hint) => {
+      const result = await settle(runRaw(getRegionTool, { ...region, parameter }));
+      failure(result, 'invalid_correction');
+      const message = `Regional requests do not support ${parameter}, a point-only correction.`;
+      expect(result.structuredContent).toMatchObject({
+        error: { message, data: { recovery: { hint } } },
+      });
+      expect(markdownText(text(result))).toContain(`Error: ${message}`);
+      expect(markdownText(text(result))).toContain(`Recovery: ${hint}`);
+      expect(fetcher).not.toHaveBeenCalled();
+    },
+  );
+  it('declares the regional recoveries in the region contract', () => {
+    const recovery = (reason: string) =>
+      getRegionTool.errors?.find((entry) => entry.reason === reason)?.recovery;
+    expect(recovery('invalid_window')).toBe(
+      'Resend the request with dates or years inside the range this error states.',
+    );
+    expect(recovery('invalid_correction')).toBe(
+      'Request WS10M or WS50M instead of WSC, or PS instead of PSC, for the region; corrected values need nasa_power_get_timeseries or nasa_power_get_climatology at a point.',
+    );
+  });
   it.each([2, 10])('accepts inclusive regional span %s', async (span) => {
     reply = () => Response.json({ type: 'FeatureCollection', features: [] });
     expect(
@@ -465,7 +507,9 @@ describe('geographic HTTP contracts', () => {
       locations: locations.map((item, i) => ({ ...item, locationId: `location_${i + 1}` })),
       partial: false,
       comparable: true,
-      possibleSharedGridCell: [['location_1', 'location_2', 'location_3']],
+      possibleSharedGridCell: [
+        { parameters: ['T2M'], locations: ['location_1', 'location_2', 'location_3'] },
+      ],
       summaries: expect.arrayContaining([
         expect.objectContaining({
           bucket: 'annual',
@@ -480,6 +524,186 @@ describe('geographic HTTP contracts', () => {
     expect(text(result)).toContain(label);
     expect(text(result)).toContain('[https://example.com/source](<https://example.com/source>)');
     expect(text(result)).toContain('location_3');
+  });
+
+  describe('possibleSharedGridCell', () => {
+    type Series = Record<string, Record<string, number | string>>;
+    /** One point response: `series` per code, `units` per code, the meteorology cell's elevation. */
+    const site = (series: Series, units: Record<string, string>, elevation = 10) => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [-120, 40, elevation] },
+      properties: { parameter: series },
+      header: { fill_value: -999 },
+      parameters: Object.fromEntries(
+        Object.entries(units).map(([code, unit]) => [code, { units: unit }]),
+      ),
+    });
+    const climatology = (jan: number, feb: number, ann: number) => ({
+      JAN: jan,
+      FEB: feb,
+      ANN: ann,
+    });
+    const sites = (count: number) =>
+      Array.from({ length: count }, (_, i) => ({
+        latitude: 40 + i,
+        longitude: -120,
+        label: `s${i}`,
+      }));
+    const at = (url: URL) => Number(url.searchParams.get('latitude')) - 40;
+    const both = { mode: 'parameters', parameters: ['T2M', 'RH2M'] };
+    const groups = (result: WireResult) =>
+      (result.structuredContent as { possibleSharedGridCell: unknown }).possibleSharedGridCell;
+
+    it('groups per parameter when sites share one grid but not the other, ignoring elevation', async () => {
+      /** Sites 1 and 3 share a T2M cell at different elevations; sites 2 and 4 share an RH2M cell. */
+      reply = (url) => {
+        const i = at(url);
+        return Response.json(
+          site(
+            {
+              T2M: i % 2 === 0 ? climatology(1, 2, 3) : climatology(4 + i, 5, 6),
+              RH2M: i % 2 === 1 ? climatology(10, 20, 30) : climatology(11 + i, 21, 31),
+            },
+            { T2M: 'C', RH2M: '%' },
+            i === 2 ? 2413 : 1801,
+          ),
+        );
+      };
+      const result = await settle(
+        runRaw(compareLocationsTool, { locations: sites(4), selection: both }),
+      );
+      expect(result.isError).not.toBe(true);
+      /** Ordered by first location before parameter order, which puts RH2M first. */
+      expect(groups(result)).toEqual([
+        { parameters: ['T2M'], locations: ['location_1', 'location_3'] },
+        { parameters: ['RH2M'], locations: ['location_2', 'location_4'] },
+      ]);
+      expect(markdownText(text(result))).toContain(
+        'possibleSharedGridCell: Records with ordered columns [parameters, locations]\n[\n[[T2M], [location_1, location_3]],\n[[RH2M], [location_2, location_4]]\n]',
+      );
+    });
+
+    it('keeps trailing fill in place and lists parameters with one location set in response order', async () => {
+      /** A window reaching POWER's release latency: the last two days are fill at every site. */
+      const daily = (offset: number) =>
+        Object.fromEntries(
+          ['20240101', '20240102', '20240103', '20240104', '20240105'].map((key, day) => [
+            key,
+            day > 2 ? -999 : offset + day,
+          ]),
+        );
+      reply = (url) =>
+        Response.json(
+          site({ T2M: daily(1), RH2M: daily(50) }, { T2M: at(url) === 2 ? 'F' : 'C', RH2M: '%' }),
+        );
+      const result = await settle(
+        runRaw(compareLocationsTool, {
+          temporalResolution: 'daily',
+          startDate: '2024-01-01',
+          endDate: '2024-01-05',
+          locations: sites(3),
+          selection: both,
+        }),
+      );
+      expect(result.isError).not.toBe(true);
+      /** Site 3 reports T2M in other units, so it shares only RH2M. */
+      expect(groups(result)).toEqual([
+        { parameters: ['RH2M'], locations: ['location_1', 'location_2', 'location_3'] },
+        { parameters: ['T2M'], locations: ['location_1', 'location_2'] },
+      ]);
+    });
+
+    it('sits a site out of a parameter it did not return and orders ties by parameter', async () => {
+      reply = (url) =>
+        Response.json(
+          at(url) === 1
+            ? site({ T2M: climatology(1, 2, 3) }, { T2M: 'C' })
+            : site(
+                { T2M: climatology(1, 2, 3), RH2M: climatology(10, 20, 30) },
+                { T2M: 'C', RH2M: '%' },
+              ),
+        );
+      const result = await settle(
+        runRaw(compareLocationsTool, { locations: sites(3), selection: both }),
+      );
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toMatchObject({
+        locations: [{}, { omittedParameters: [{ code: 'RH2M' }] }, {}],
+      });
+      expect(groups(result)).toEqual([
+        { parameters: ['RH2M'], locations: ['location_1', 'location_3'] },
+        { parameters: ['T2M'], locations: ['location_1', 'location_2', 'location_3'] },
+      ]);
+    });
+
+    it.each([
+      ['constant (a dry spell of zeros)', climatology(0, 0, 0)],
+      ['all fill', climatology(-999, -999, -999)],
+      ['one valid value', climatology(-999, 7, -999)],
+    ])('does not group two different cells whose series is %s', async (_shape, shared) => {
+      reply = (url) =>
+        Response.json(
+          site({ T2M: shared, RH2M: climatology(at(url), 20, 30) }, { T2M: 'C', RH2M: '%' }),
+        );
+      const result = await settle(
+        runRaw(compareLocationsTool, { locations: sites(2), selection: both }),
+      );
+      expect(result.isError).not.toBe(true);
+      expect(groups(result)).toEqual([]);
+    });
+
+    it.each([
+      [
+        'valid values match but whose fill falls in different months',
+        { JAN: 1, FEB: 2, MAR: -999, ANN: 3 },
+        { JAN: 1, FEB: -999, MAR: 2, ANN: 3 },
+      ],
+      [
+        'values match under different period keys',
+        { JAN: 1, FEB: 2, ANN: 3 },
+        { JAN: 1, MAR: 2, ANN: 3 },
+      ],
+    ])('does not group two sites whose %s', async (_shape, first, second) => {
+      reply = (url) => Response.json(site({ T2M: at(url) === 0 ? first : second }, { T2M: 'C' }));
+      const result = await settle(runRaw(compareLocationsTool, { locations: sites(2), selection }));
+      expect(result.isError).not.toBe(true);
+      expect(groups(result)).toEqual([]);
+    });
+
+    it('leaves categorical and orientation columns out of the groups', async () => {
+      /** Identical zone codes and orientations at every site; the numeric angle differs by site. */
+      reply = (url) =>
+        Response.json(
+          site(
+            {
+              T_ZONES: climatology(22, 61, 34),
+              SI_TILTED_AVG_OPTIMAL_ANG: climatology(at(url), 30, 40),
+              SI_TILTED_AVG_OPTIMAL_ANG_ORT: { JAN: 'S', FEB: 'N', ANN: 'S' },
+            },
+            {
+              T_ZONES: 'zones',
+              SI_TILTED_AVG_OPTIMAL_ANG: 'degrees',
+              SI_TILTED_AVG_OPTIMAL_ANG_ORT: 'N/S Orientation',
+            },
+          ),
+        );
+      const result = await settle(
+        runRaw(compareLocationsTool, {
+          locations: sites(2),
+          selection: { mode: 'parameters', parameters: ['T_ZONES', 'SI_EF_TILTED_SURFACE'] },
+          community: 'SB',
+        }),
+      );
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toMatchObject({
+        parameters: [
+          { code: 'SI_TILTED_AVG_OPTIMAL_ANG', valueKind: 'number' },
+          { code: 'SI_TILTED_AVG_OPTIMAL_ANG_ORT', valueKind: 'orientation' },
+          { code: 'T_ZONES', valueKind: 'categorical' },
+        ],
+      });
+      expect(groups(result)).toEqual([]);
+    });
   });
   it.each([
     [
@@ -832,6 +1056,156 @@ describe('geographic HTTP contracts', () => {
     expect(observations()).toHaveLength(2);
   }, 15_000);
 
+  describe('locations past one call', () => {
+    const sites = (count: number) =>
+      Array.from({ length: count }, (_, i) => ({
+        latitude: 30 + i,
+        longitude: -100,
+        label: `plot ${i + 1}`,
+      }));
+    const notice = (first: number, last: number) =>
+      `Input locations ${first}–${last} were not compared: one call compares at most 10 and leaves at least two for the next. Send deferredLocations as locations in a second call with every other argument unchanged, and pass the canvas_id this response returned, if any, to keep both calls' tables on one canvas. That call numbers its sites from location_1, so match sites across calls by label; sort order and possibleSharedGridCell cover only one call's sites.`;
+
+    it.each([
+      [11, 9],
+      [12, 10],
+      [20, 10],
+    ])(
+      'compares %i locations as the first %i and defers the rest exactly as sent, on both surfaces',
+      async (total, compared) => {
+        const input = sites(total);
+        const result = await settle(runRaw(compareLocationsTool, { locations: input, selection }));
+        expect(result.isError).not.toBe(true);
+        expect(fetcher).toHaveBeenCalledTimes(compared + 2);
+        const deferred = input.slice(compared);
+        expect(result.structuredContent).toMatchObject({
+          request: { locations: input.slice(0, compared) },
+          locations: input
+            .slice(0, compared)
+            .map((site, i) => ({ ...site, locationId: `location_${i + 1}` })),
+          failed: [],
+          partial: false,
+          notice: notice(compared + 1, total),
+        });
+        const output = result.structuredContent as { deferredLocations: object[] };
+        /** Exactly the input entries, no `position` or other key, so they resend as `locations`. */
+        expect(output.deferredLocations).toStrictEqual(deferred);
+        const rendered = markdownText(text(result));
+        expect(rendered).toContain(notice(compared + 1, total));
+        expect(rendered).toContain(
+          `deferredLocations: Records with ordered columns [latitude, longitude, label]\n[\n${deferred.map((site) => `[${site.latitude}, ${site.longitude}, ${site.label}]`).join(',\n')}\n]`,
+        );
+
+        const next = await settle(
+          runRaw(compareLocationsTool, { locations: output.deferredLocations, selection }),
+        );
+        expect(next.isError).not.toBe(true);
+        expect(next.structuredContent).toMatchObject({
+          request: { locations: deferred },
+          locations: deferred.map((site, i) => ({ ...site, locationId: `location_${i + 1}` })),
+        });
+        expect(next.structuredContent).not.toHaveProperty('deferredLocations');
+        expect(next.structuredContent).not.toHaveProperty('notice');
+      },
+    );
+
+    it('leaves a call of ten or fewer locations without deferral or notice', async () => {
+      const result = await settle(
+        runRaw(compareLocationsTool, { locations: sites(10), selection }),
+      );
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toMatchObject({ request: { locations: sites(10) } });
+      expect(result.structuredContent).not.toHaveProperty('deferredLocations');
+      expect(result.structuredContent).not.toHaveProperty('notice');
+      expect(text(result)).not.toContain('deferredLocations');
+      expect(text(result)).not.toContain('were not compared');
+    });
+
+    it('rejects 21 locations and a deferred entry carrying an extra key at the schema', async () => {
+      for (const args of [
+        { locations: sites(21), selection },
+        { locations: sites(2).map((site, i) => ({ ...site, position: 11 + i })), selection },
+      ]) {
+        expect(compareLocationsTool.input.safeParse(args).success).toBe(false);
+        expect((await settle(runRaw(compareLocationsTool, args))).isError).toBe(true);
+      }
+      expect(fetcher).not.toHaveBeenCalled();
+    });
+
+    it('stops unsent compared sites after a 429 without touching the deferred ones', async () => {
+      reply = (url) =>
+        url.searchParams.get('latitude') === '30'
+          ? Response.json(point())
+          : Response.json(
+              { messages: ['slow down'] },
+              { status: 429, headers: { 'retry-after': '60' } },
+            );
+      const input = sites(12);
+      const result = await settle(runRaw(compareLocationsTool, { locations: input, selection }));
+      expect(observations()).toHaveLength(2);
+      expect(result.structuredContent).toMatchObject({
+        partial: true,
+        locations: [{ locationId: 'location_1' }],
+        failed: Array.from({ length: 9 }, (_, i) => ({
+          locationId: `location_${i + 2}`,
+          reason: 'upstream_rate_limited',
+        })),
+        notice: notice(11, 12),
+      });
+      expect(
+        (result.structuredContent as { deferredLocations: object[] }).deferredLocations,
+      ).toStrictEqual(input.slice(10));
+    });
+
+    it('counts the notice in the inline budget check', async () => {
+      const row = (index: number): ObservationRow => ({
+        periodKey: String(index),
+        periodKind: 'climatology_month',
+        date: null,
+        year: null,
+        month: 1,
+        hour: null,
+        latitude: 30,
+        longitude: -100,
+        elevation: null,
+        T2M: index,
+        locationId: 'location_1',
+      });
+      const base = {
+        request: { temporalResolution: 'climatology', locations: sites(2) },
+        metadata: { fetchedAt: '', endpointUrls: [] },
+        parameters: [],
+        locations: [],
+        failed: [],
+        partial: false,
+        deferredLocations: sites(12).slice(10),
+        summaries: [],
+        possibleSharedGridCell: [],
+        rows: Array.from({ length: 40 }, (_, i) => row(i)),
+      };
+      const measure = (value: object) =>
+        Math.max(
+          JSON.stringify(value).length,
+          formatFaithfully(value).reduce((sum, block) => sum + block.text.length, 0),
+        );
+      /** Plain padding grows both measures one for one; leave 5 characters of headroom. */
+      const padding = 40_000 - 5 - measure({ ...base, rowCount: 40, dataset: null });
+      const dataset = { ...base, metadata: { ...base.metadata, fetchedAt: 'x'.repeat(padding) } };
+      const ctx = createMockContext();
+      const present = (deferral?: string) =>
+        canvas.presentComparison(dataset, undefined, ctx, 'test', undefined, deferral);
+      expect(await present()).toMatchObject({ rowCount: 40, dataset: null });
+      /** A refusal replaces the success that would carry the notice, so its recovery carries it. */
+      await expect(present(notice(11, 12))).rejects.toMatchObject({
+        data: {
+          reason: 'canvas_required',
+          deferredLocations: base.deferredLocations,
+          recovery: { hint: expect.stringContaining(`stage it whole. ${notice(11, 12)}`) },
+        },
+      });
+    });
+  });
+
   describe('sized canvas_required splits re-sent through the tool', () => {
     /** Answers any window, box and code list, like POWER; inline-only canvas from the outer setup. */
     const offline = (codes: string[]) => {
@@ -1010,5 +1384,88 @@ describe('geographic HTTP contracts', () => {
       expect(rows).toHaveLength(130);
       expect(new Set(rows.map(identity)).size).toBe(130);
     });
+
+    it('splits only the compared sites and carries the deferred ones beside the calls', async () => {
+      const codes = Array.from({ length: 6 }, (_, i) => `P${i}`);
+      offline(codes);
+      const sites = Array.from({ length: 12 }, (_, i) => ({
+        latitude: 30 + i,
+        longitude: -100 - i,
+        label: `site ${i}`,
+      }));
+      const args = { locations: sites, selection: { mode: 'parameters', parameters: codes } };
+      const result = await settle(runRaw(compareLocationsTool, args));
+      const split = sizedRefusal(result, 130);
+      expect(split.calls.flatMap((call) => (call as { locations: object[] }).locations)).toEqual(
+        sites.slice(0, 10),
+      );
+      const { error } = result.structuredContent as {
+        error: { data: { deferredLocations: object[] } };
+      };
+      expect(error.data.deferredLocations).toStrictEqual(sites.slice(10));
+      for (const site of sites.slice(10)) expect(markdownText(text(result))).toContain(site.label);
+      const rows = await resend(compareLocationsTool, args, split.calls);
+      expect(rows).toHaveLength(130);
+    });
+  });
+});
+
+describe('a deferred comparison at the 20-location ceiling', () => {
+  /** The captured ten-site default comparison, then ten deferred labels at the 120-character maximum. */
+  it('stages the default climatology selection within the response budget, notice included', async () => {
+    const fixture = await nativeFixture();
+    const captured = ComparisonOutputSchema.omit({ rowCount: true, dataset: true }).parse(
+      JSON.parse(
+        await readFile(new URL('../../fixtures/comparison-full.json', import.meta.url), 'utf8'),
+      ),
+    );
+    const compared = captured.request.locations;
+    const deferred = compared.map((site, i) => ({
+      latitude: site.latitude + 0.5,
+      longitude: site.longitude,
+      label: `deferred ${i + 1}`.padEnd(120, '·'),
+    }));
+    const source = initPowerService({
+      config: { maxCanvasesPerProcess: 8, dataframeDropEnabled: true },
+    });
+    vi.spyOn(source, 'validateRequest').mockResolvedValue();
+    vi.spyOn(source, 'point').mockImplementation(async (request) => {
+      const location = captured.locations.find(
+        (site) => site.latitude === request.latitude && site.longitude === request.longitude,
+      )!;
+      return {
+        ...PowerDatasetSchema.parse({
+          ...location,
+          rows: captured.rows.filter((row) => row.locationId === location.locationId),
+        }),
+        request,
+      };
+    });
+    try {
+      const result = await runToolContract(
+        compareLocationsTool,
+        compareLocationsTool.input.parse({
+          ...captured.request,
+          locations: [...compared, ...deferred],
+        }),
+      );
+      expect(result.isError).not.toBe(true);
+      const output = result.structuredContent as {
+        locations: unknown[];
+        deferredLocations: unknown[];
+        notice: string;
+        summaryDatasets?: object;
+      };
+      expect(output.locations).toHaveLength(10);
+      expect(output.deferredLocations).toStrictEqual(deferred);
+      expect(output.notice).toContain('Input locations 11–20 were not compared');
+      expect(output.summaryDatasets).toBeDefined();
+      expect(JSON.stringify(result.structuredContent).length).toBeLessThanOrEqual(40_000);
+      expect(text(result).length).toBeLessThanOrEqual(40_000);
+    } finally {
+      vi.restoreAllMocks();
+      source.dispose();
+      await fixture.close();
+    }
   });
 });

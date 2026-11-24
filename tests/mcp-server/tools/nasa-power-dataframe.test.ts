@@ -1,10 +1,10 @@
 /** @fileoverview Real dataframe handlers and both response surfaces. @module tests/mcp-server/tools/nasa-power-dataframe */
+import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { dataframeDescribeTool } from '@/mcp-server/tools/definitions/nasa-power-dataframe-describe.tool.js';
 import { dataframeDropTool } from '@/mcp-server/tools/definitions/nasa-power-dataframe-drop.tool.js';
 import { dataframeQueryTool } from '@/mcp-server/tools/definitions/nasa-power-dataframe-query.tool.js';
-import { formatFaithfully } from '@/services/canvas/format.js';
 import { dataset, nativeFixture } from '../../services/canvas/fixture.js';
 
 describe('dataframe tool contract', () => {
@@ -41,41 +41,47 @@ describe('dataframe tool contract', () => {
     expect(rendered).toContain(
       'The effective row limit is 1000; larger requested limits are capped.',
     );
-    expect(rendered.length).toBeLessThanOrEqual(40000);
-    expect(JSON.stringify(result.structuredContent).length).toBeLessThanOrEqual(40000);
+    const exact = await runToolContract(dataframeQueryTool, {
+      canvas_id: handle.canvas_id,
+      sql: `SELECT a.T2M FROM ${handle.table} a CROSS JOIN ${handle.table} b`,
+      rowLimit: 1000,
+    });
+    expect(exact.structuredContent).toMatchObject({ shownCount: 1000, truncated: true });
+    expect(exact.structuredContent).not.toHaveProperty('notice');
+    expect(
+      exact.content
+        .filter((block) => block.type === 'text')
+        .map((block) => block.text)
+        .join(''),
+    ).not.toContain('effective row limit');
   });
-  it('counts the effective-limit notice trailer against the complete response budget', async () => {
-    const empty = {
-      canvas_id: 'abcdefghij',
+  it('returns a value longer than 40,000 characters whole, with the effective-limit notice on both surfaces', async () => {
+    const handle = await stage();
+    const label = 'x'.repeat(40001);
+    const result = await runToolContract(dataframeQueryTool, {
+      canvas_id: handle.canvas_id,
+      sql: `SELECT repeat('x', 40001) AS label FROM ${handle.table} LIMIT 1`,
+      rowLimit: 1001,
+    });
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toEqual({
+      canvas_id: handle.canvas_id,
       columns: ['label'],
-      rows: [{ label: '' }],
+      rows: [{ label }],
       rowCount: 1,
       shownCount: 1,
       truncated: false,
       countSemantics: 'exact',
-    };
-    // Nonempty strings use inline literals; account for their delimiters separately from the blank fence.
-    const sample = { ...empty, rows: [{ label: 'x' }] };
-    const characters = 40000 - formatFaithfully(sample)[0]!.text.length + 1;
-    const handle = await stage();
-    const input = {
-      canvas_id: handle.canvas_id,
-      sql: `SELECT repeat('x', ${characters}) AS label FROM ${handle.table} LIMIT 1`,
-      rowLimit: 1000,
-    };
-    expect((await runToolContract(dataframeQueryTool, input)).isError).not.toBe(true);
-    const capped = await runToolContract(dataframeQueryTool, { ...input, rowLimit: 1001 });
-    expect(capped.structuredContent).toMatchObject({
-      error: {
-        data: { reason: 'query_limit', recovery: { hint: expect.stringContaining('narrow') } },
-      },
+      notice: 'The effective row limit is 1000; larger requested limits are capped.',
     });
-    expect(
-      capped.content
-        .filter((block) => block.type === 'text')
-        .map((block) => block.text)
-        .join(''),
-    ).toContain('query_limit');
+    const rendered = result.content
+      .filter((block) => block.type === 'text')
+      .map((block) => block.text)
+      .join('');
+    expect(rendered).toContain(label);
+    expect(rendered).toContain(
+      'The effective row limit is 1000; larger requested limits are capped.',
+    );
   });
 
   it('renders query structured rows and real multiline strings on the content surface', async () => {
@@ -130,7 +136,7 @@ describe('dataframe tool contract', () => {
         envelope: { metadata: dataset().metadata },
       },
     });
-    const text = dataframeDescribeTool.format!(output)
+    const text = dataframeDescribeTool.format!(dataframeDescribeTool.output!.parse(output))
       .filter((block) => block.type === 'text')
       .map((block) => block.text)
       .join('\n');
@@ -170,14 +176,36 @@ describe('dataframe tool contract', () => {
       expect(text).toContain(reason!);
     }
   });
-  it('rejects malformed tokens, empty SQL and invalid row bounds at the public boundary', async () => {
+  it('rejects malformed tokens, empty or oversized SQL and invalid row bounds at the public boundary', async () => {
     for (const input of [
       { canvas_id: 'bad', sql: 'SELECT 1' },
       { canvas_id: 'abcdefghij', sql: '' },
+      { canvas_id: 'abcdefghij', sql: 'x'.repeat(16385) },
       { canvas_id: 'abcdefghij', sql: 'SELECT 1', rowLimit: 0 },
+      { canvas_id: 'abcdefghij', sql: 'SELECT 1', rowLimit: -1 },
       { canvas_id: 'abcdefghij', sql: 'SELECT 1', rowLimit: 1.5 },
-    ])
-      expect((await runToolContract(dataframeQueryTool, input)).isError).toBe(true);
+    ]) {
+      const result = await runToolContract(dataframeQueryTool, input);
+      expect(result.isError).toBe(true);
+      expect(result.structuredContent).toMatchObject({
+        error: { code: JsonRpcErrorCode.InvalidParams, data: { reason: 'invalid_arguments' } },
+      });
+      expect(
+        result.content
+          .filter((block) => block.type === 'text')
+          .map((block) => block.text)
+          .join('\n'),
+      ).toContain('invalid_arguments');
+    }
+    const handle = await stage();
+    const longest = await runToolContract(dataframeQueryTool, {
+      canvas_id: handle.canvas_id,
+      sql: 'SELECT 1 AS one'.padEnd(16384, ' '),
+    });
+    expect(longest.structuredContent).toMatchObject({
+      rows: [{ one: 1 }],
+      countSemantics: 'exact',
+    });
   });
   it('returns exact empty rows on both query surfaces beyond the staged end', async () => {
     const handle = await stage();

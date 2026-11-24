@@ -2,8 +2,8 @@
 
 **Server:** nasa-power-mcp-server
 **Version:** 0.4.2
-**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.13.18`
-**Engines:** Bun ≥1.4.0, Node ≥24.0.0
+**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.13.22`
+**Engines:** Bun ≥1.4.4, Node ≥24.0.0
 **MCP SDK:** `@modelcontextprotocol/server` ^2.4.0
 **Zod:** ^4.6.7
 
@@ -52,7 +52,7 @@ Read the real contracts before extending them:
 - `src/services/power/power-service.ts` owns fixed-origin requests, bounded pacing, cache and deadlines.
 - `src/services/canvas/canvas-service.ts` owns explicit-token admission, provenance, staging and cleanup.
 
-Tool files live in `src/mcp-server/tools/definitions/`. Nine tools are registered; eight are enabled by default. `NASA_POWER_DATAFRAME_DROP_ENABLED=true` exposes explicit table removal. No resources or prompts are registered. `createApp({ skills: 'skills' })` serves the published `skills/nasa-power-guide/SKILL.md` as `skill://nasa-power-guide/SKILL.md`; when a tool's gates, units or identifiers change, update that skill and re-verify its claims against live behavior.
+Tool files live in `src/mcp-server/tools/definitions/`. Ten tools are registered; nine are enabled by default. `NASA_POWER_DATAFRAME_DROP_ENABLED=true` exposes explicit table removal. No resources or prompts are registered. `createApp({ skills: 'skills' })` serves the published `skills/nasa-power-guide/SKILL.md` as `skill://nasa-power-guide/SKILL.md`; when a tool's gates, units or identifiers change, update that skill and re-verify its claims against live behavior.
 
 ### Configuration and distribution
 
@@ -62,7 +62,7 @@ Tool files live in `src/mcp-server/tools/definitions/`. Nine tools are registere
 
 `src/index.ts` also defaults `CANVAS_PROVIDER_TYPE` to `duckdb` once `parseConfig()` has loaded `.env`, so npm and Docker installs, which install the native dependency normally on supported platforms, stage by default; `none` disables staging. The portable MCPB fixes `CANVAS_PROVIDER_TYPE=none` because its bundle strips DuckDB's native bindings. Keep those option sets distinct.
 
-`@duckdb/node-api` stays on 1.5.6: the framework's optional peer also admits 2.x, but its canvas SQL gate refuses `SHOW <table>` on DuckDB 2 with `plan_operator_not_allowed` (cyanheads/mcp-ts-core#800), a query 1.5.x answers with the column listing.
+`@duckdb/node-api` stays on 1.5.6: the framework's optional peer also admits 2.x, but DuckDB 2 changes the results of SQL that 1.5.x answers (integer `//` and `%` by zero raise `sql_execution_error` where 1.5.x returns NULL), so moving to 2.x takes a seeded query differential against the previous release and its own release note. The `SHOW <table>` refusal that first held it (cyanheads/mcp-ts-core#800) is fixed in framework 0.13.19.
 
 ### Identity and lifecycle
 
@@ -141,7 +141,7 @@ src/
     power/                  # Source client, types, normalization and summaries
     canvas/                 # Explicit-token staging, SQL and lifecycle
   mcp-server/tools/definitions/
-                            # Nine tools and shared scientific contracts
+                            # Ten tools and shared scientific contracts
 tests/                      # Offline and native integration tests
 scripts/                    # Build, validation and packaging
 ```
@@ -254,7 +254,7 @@ When you complete a skill's checklist, check the boxes and add a completion time
 
 ## Bundling
 
-`bun run bundle` builds the stdio-only portable MCPB for Claude Desktop. `mcpb pack` reads `.mcpbignore`, not `.gitignore`, so every root path the bundle must not ship needs a root-anchored line there (`/docs/`, never `docs/`, which also strips `node_modules/*/docs/`); `lint:packaging` names each missing or unanchored line. Root `skills/` ships on purpose. `scripts/clean-mcpb.ts` prunes development dependencies, a dependency package root's agent docs, platform-specific native bindings, node-gyp build output and the framework's build-only files. Its agent-doc selector is anchored to a package root so the MCP SDK's runtime `dist/ext/skills/` modules survive (cyanheads/mcp-ts-core#794); `tests/scripts/mcpb-agent-docs.test.ts` holds the cleaner and `lint:packaging` to the same selection. The manifest fixes `CANVAS_PROVIDER_TYPE=none`: inline observations work, oversized source requests fail with `canvas_required` and a re-sendable split, and dataframe tools report that the provider is unavailable. `@duckdb/node-api` is a direct dependency for npm and Docker installs on supported platforms; bundle pruning does not change that package contract.
+`bun run bundle` builds the stdio-only portable MCPB for Claude Desktop. `mcpb pack` reads `.mcpbignore`, not `.gitignore`, so every root path the bundle must not ship needs a root-anchored line there (`/docs/`, never `docs/`, which also strips `node_modules/*/docs/`); `lint:packaging` names each missing or unanchored line. Root `skills/` ships on purpose. `scripts/clean-mcpb.ts` prunes development dependencies, a dependency package root's agent docs (`framework-skills/`, `skills/`, `.claude/`, `.agents/`, `AGENTS.md`, `CLAUDE.md`) and every `SKILL.md` under `node_modules/`, platform-specific native bindings, node-gyp build output and the framework's build-only files. Its directory selector is anchored to a package root so the MCP SDK's runtime `dist/ext/skills/` modules survive (cyanheads/mcp-ts-core#794); `tests/scripts/mcpb-agent-docs.test.ts` holds the cleaner and `lint:packaging` to the same selection. The manifest fixes `CANVAS_PROVIDER_TYPE=none`: inline observations work, oversized source requests fail with `canvas_required` and a re-sendable split, and dataframe tools report that the provider is unavailable. `@duckdb/node-api` is a direct dependency for npm and Docker installs on supported platforms; bundle pruning does not change that package contract.
 
 **Adding an env var requires both files:** `server.json` (registry discovery, `environmentVariables[]`) and `manifest.json` (bundle install UX, `mcp_config.env` + `user_config`). `lint:packaging` (run by `devcheck`) verifies the env var names match, that every `user_config` option is wired into `mcp_config.env` as `"X": "${user_config.X}"` (the host substitutes nothing else — `"${X}"` reaches the server as that literal string), and that an optional string option carries `"default": ""`.
 

@@ -17,6 +17,11 @@ export const POWER_LIMITS = {
   attemptMs: 20_000,
   attempts: 2,
   comparisonAttempts: 12,
+  /**
+   * Locations one comparison call fetches, within its attempt budget. A call accepts twice as many
+   * and returns the rest, so one follow-up call covers every input.
+   */
+  comparedLocations: 10,
   bodyBytes: 16 * 1024 * 1024,
   comparisonBodyBytes: 32 * 1024 * 1024,
   rows: 250_000,

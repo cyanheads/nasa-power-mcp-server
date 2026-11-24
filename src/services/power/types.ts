@@ -1,5 +1,6 @@
 /** @fileoverview Scientific request, source and output contracts. @module services/power/types */
 import { z } from '@cyanheads/mcp-ts-core';
+import { POWER_LIMITS } from '../../config/server-config.js';
 import { type Preset, WIND_SURFACES } from './presets.js';
 
 /** JSON-compatible metadata preserves unfamiliar upstream fields. */
@@ -190,21 +191,23 @@ export const RegionRequestSchema = z.discriminatedUnion('temporalResolution', [
 ]);
 export type RegionRequest = z.infer<typeof RegionRequestSchema>;
 const { latitude: _lat, longitude: _lon, ...comparisonShared } = point;
+/** One labeled comparison coordinate, accepted, echoed and deferred in the same shape. */
+export const ComparisonLocationSchema = z
+  .strictObject({
+    latitude,
+    longitude,
+    label: z.string().min(1).max(120).describe('Verbatim caller label'),
+  })
+  .describe('One labeled coordinate in stable input order');
 const comparison = {
   ...comparisonShared,
   locations: z
-    .array(
-      z
-        .strictObject({
-          latitude,
-          longitude,
-          label: z.string().min(1).max(120).describe('Verbatim caller label'),
-        })
-        .describe('One labeled coordinate in stable input order'),
-    )
+    .array(ComparisonLocationSchema)
     .min(2)
-    .max(10)
-    .describe('Locations in stable input order'),
+    .max(2 * POWER_LIMITS.comparedLocations)
+    .describe(
+      'Locations in stable input order. One call compares the first 10 (the first 9 when 11 arrive) and returns the rest as deferredLocations',
+    ),
   sort: z
     .strictObject({
       parameter: CodeSchema.describe(
@@ -281,11 +284,15 @@ export const NormalizedClimatologyRequestSchema = NormalizedPowerRequestSchema.o
 /** Regional provenance retains every bound and the single effective parameter. */
 export const NormalizedRegionRequestSchema = z.object({ ...region, ...normalizedWindow });
 const { latitude: _outputLat, longitude: _outputLon, ...normalizedComparison } = normalizedPoint;
-/** Comparison provenance keeps original location order and the requested sort. */
+/** Comparison provenance keeps the compared locations in input order and the requested sort. */
 export const NormalizedCompareRequestSchema = z.object({
   ...normalizedComparison,
   ...normalizedWindow,
-  locations: comparison.locations,
+  locations: z
+    .array(ComparisonLocationSchema)
+    .min(2)
+    .max(POWER_LIMITS.comparedLocations)
+    .describe('Compared locations in input order; location_N is input position N'),
   sort: comparison.sort,
 });
 /** Exact period classifications prevent annual/monthly mixing. */
@@ -566,4 +573,179 @@ export type AccessMetadata = {
   cacheHit: boolean;
   effectiveParameters?: string[];
 };
+/** Four-digit year; the service checks it against the Indicators configuration. */
+const designYear = z.number().int().min(1000).max(9999);
+/** One point and an optional ordered year pair; there is no units mode (POWER relabels without converting). */
+export const DesignConditionsRequestSchema = z.strictObject({
+  latitude,
+  longitude,
+  startYear: designYear
+    .optional()
+    .describe(
+      'First calendar year of the period; supply with endYear, or omit both for the full configured coverage',
+    ),
+  endYear: designYear
+    .optional()
+    .describe(
+      'Last calendar year of the period, inclusive; supply with startYear, or omit both for the full configured coverage',
+    ),
+});
+export type DesignConditionsRequest = z.infer<typeof DesignConditionsRequestSchema>;
+/** Indicators coverage drives year defaults and refusals; a configuration without it is a shape failure. */
+export const IndicatorsConfigurationSchema = PowerConfigurationSchema.extend({
+  settings: z
+    .object({
+      start: z
+        .string()
+        .regex(/^\d{4}-/)
+        .describe('Configured first day of coverage'),
+      end: z
+        .string()
+        .regex(/^\d{4}-/)
+        .describe('Configured last day of coverage'),
+      range: z.number().int().min(1).describe('Minimum period length in years'),
+    })
+    .catchall(JsonValueSchema)
+    .describe('Design-condition coverage and minimum period length'),
+});
+export type IndicatorsConfiguration = z.infer<typeof IndicatorsConfigurationSchema>;
+/** POWER's month keys, January first. */
+export const DESIGN_MONTH_KEYS = [
+  '1',
+  '2',
+  '3',
+  '4',
+  '5',
+  '6',
+  '7',
+  '8',
+  '9',
+  '10',
+  '11',
+  '12',
+] as const;
+/** Indicators point body: numeric scalars and `{"1".."12"}` month objects beside `metadata`. */
+export const DesignConditionsPayloadSchema = z
+  .object({
+    metadata: z
+      .object({
+        lat: z.number(),
+        lon: z.number(),
+        elevation: z.number().nullish(),
+        timezone: z.number().nullish(),
+        pressure: z.number().nullish(),
+        start: z.number().int(),
+        end: z.number().int(),
+        units: z.record(z.string(), z.string()).optional(),
+      })
+      .catchall(JsonValueSchema),
+  })
+  .catchall(z.union([z.number(), z.partialRecord(z.enum(DESIGN_MONTH_KEYS), z.number())]));
+export type DesignConditionsPayload = z.infer<typeof DesignConditionsPayloadSchema>;
+/** Section headings of POWER's Climatic Design Conditions report. */
+export const DesignConditionSectionSchema = z
+  .enum([
+    'heating_humidification',
+    'cooling_dehumidification_enthalpy',
+    'extreme_annual',
+    'monthly',
+  ])
+  .describe('Section of the POWER Climatic Design Conditions report');
+export type DesignConditionSection = z.infer<typeof DesignConditionSectionSchema>;
+const designEntry = {
+  code: z.string().describe('POWER Indicators key, verbatim'),
+  section: DesignConditionSectionSchema.nullable().describe(
+    'Report section; null for a key this server does not catalogue',
+  ),
+  label: z
+    .string()
+    .nullable()
+    .describe('Report label, ASHRAE abbreviations expanded; null for an uncatalogued key'),
+  units: z
+    .string()
+    .nullable()
+    .describe('Units of the value; null for an uncatalogued key or an unreported unit'),
+};
+/** Labeled design conditions with provenance; values are POWER's, fills and absent months null. */
+export const DesignConditionsSchema = z.object({
+  request: z
+    .object({
+      latitude,
+      longitude,
+      startYear: z.number().int().describe('First calendar year sent to NASA'),
+      endYear: z.number().int().describe('Last calendar year sent to NASA'),
+    })
+    .describe('Request as sent to NASA; omitted years resolve to the configured coverage'),
+  metadata: z
+    .object({
+      endpointUrl: z.string().describe('Exact NASA endpoint URL used for retrieval'),
+      fetchedAt: z.string().describe('Original retrieval timestamp, retained on cache hits'),
+      cacheHit: z.boolean().describe('Whether this response reuses cached source data'),
+      api: z
+        .object({
+          name: z.string().describe('Source API name'),
+          version: z
+            .string()
+            .optional()
+            .describe('Source API version from the x-app-version response header'),
+        })
+        .describe('Source API identity'),
+      sources: z
+        .array(z.string().describe('Source dataset identifier'))
+        .optional()
+        .describe('Source datasets from the x-data-sources response header'),
+      startYear: z.number().int().describe('First year of the period NASA reports computing'),
+      endYear: z.number().int().describe('Last year of the period NASA reports computing'),
+      returnedCoordinates: z
+        .object({
+          latitude,
+          longitude,
+          elevation: z
+            .number()
+            .nullable()
+            .describe('Returned elevation in meters, unknown when null'),
+        })
+        .describe('Returned point coordinates and source elevation'),
+      timezoneOffsetInHours: z
+        .number()
+        .nullable()
+        .describe('UTC offset NASA reports for the point, in hours; unknown when null'),
+      standardPressureInKpa: z
+        .number()
+        .nullable()
+        .describe(
+          'Standard atmospheric pressure at the returned elevation, in kPa; unknown when null',
+        ),
+      reportedUnits: z
+        .record(z.string(), z.string().describe('Unit text'))
+        .describe('Temperature, wind_speed and precipitation units NASA reports, verbatim'),
+    })
+    .describe('Source provenance and access information'),
+  indicators: z
+    .array(
+      z
+        .object({
+          ...designEntry,
+          value: z.number().nullable().describe('Reported value; null for a fill value'),
+        })
+        .describe('One scalar design condition'),
+    )
+    .describe('Scalar design conditions: catalogued keys in report order, then uncatalogued keys'),
+  monthly: z
+    .array(
+      z
+        .object({
+          ...designEntry,
+          values: z
+            .array(
+              z.number().nullable().describe('Monthly value; null for a fill or an absent month'),
+            )
+            .length(12)
+            .describe('Twelve monthly values, January first'),
+        })
+        .describe('One monthly design condition'),
+    )
+    .describe('Monthly design conditions: catalogued keys in report order, then uncatalogued keys'),
+});
+export type DesignConditions = z.infer<typeof DesignConditionsSchema>;
 export type { Preset };

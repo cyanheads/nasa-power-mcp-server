@@ -80,6 +80,13 @@ describe('point tool consumption contracts', () => {
     );
     expect(coverageGuidance).toContain('Regional climatology accepts no year fields');
     expect(markdownText(text(coverage))).toContain('Regional climatology accepts no year fields');
+    /** Window ends move with the date and the product configuration, so none is written as a year. */
+    const ends =
+      'Daily and hourly windows end at the current UTC date, monthly windows at the current month, and climatology at the end year its product configuration reports; a refused window states the range in force.';
+    expect(coverageGuidance).toContain(ends);
+    expect(markdownText(text(coverage))).toContain(ends);
+    expect(coverageGuidance).toContain('span at least two calendar years');
+    expect(coverageGuidance).not.toMatch(/\b(?:19|20)\d{2}\b/);
     const missing = await runToolContract(listReferenceTool, { topic: 'missing_data' });
     expect((missing.structuredContent as { guidance: string[] }).guidance.join(' ')).toContain(
       'categorical',
@@ -323,7 +330,8 @@ describe('point tool consumption contracts', () => {
       const window =
         temporalResolution === 'daily' || temporalResolution === 'hourly'
           ? { startDate: '2024-01-01', endDate: '2024-01-02' }
-          : { startYear: 2024, endYear: 2024 };
+          : /** NASA computes a climatology over at least two calendar years. */
+            { startYear: temporalResolution === 'climatology' ? 2023 : 2024, endYear: 2024 };
       const result = await settle(
         runRaw(temporalResolution === 'climatology' ? getClimatologyTool : getTimeseriesTool, {
           latitude: 47,
@@ -597,6 +605,61 @@ describe('point tool consumption contracts', () => {
   ])('returns actionable declared failure for %j', async (extra, reason) => {
     const result = await settle(runRaw(getTimeseriesTool, { ...input, ...extra }));
     failure(result, reason);
+  });
+
+  describe('window refusals that state their range', () => {
+    const inRange = 'Resend the request with dates or years inside the range this error states.';
+    it.each([
+      [
+        'a timeseries window past today',
+        getTimeseriesTool,
+        { ...input, endDate: '2026-10-20' },
+        'Daily dates must fall within 1981-01-01 to 2026-10-19.',
+        inRange,
+        [],
+      ],
+      [
+        'a single-year climatology',
+        getClimatologyTool,
+        { latitude: 47, longitude: -122, startYear: 2020, endYear: 2020 },
+        'Climatology years must span at least two calendar years, with startYear before endYear.',
+        'Resend with endYear after startYear, or omit both years to use the source product range.',
+        [],
+      ],
+      [
+        'a climatology past its configured end',
+        getClimatologyTool,
+        { latitude: 47, longitude: -122, startYear: 2010, endYear: 2026 },
+        'Climatology years must fall within 1981 to 2025.',
+        inRange,
+        ['/api/temporal/climatology/configuration'],
+      ],
+    ] as const)(
+      'refuses %s on both surfaces',
+      async (_label, definition, args, message, hint, requested) => {
+        const result = await settle(runRaw(definition, args));
+        failure(result, 'invalid_window');
+        expect(result.structuredContent).toMatchObject({
+          error: { message, data: { recovery: { hint } } },
+        });
+        expect(markdownText(text(result))).toContain(`Error: ${message}`);
+        expect(fetcher.mock.calls.map(([url]) => new URL(String(url)).pathname)).toEqual(requested);
+        expect(
+          definition.errors?.find((entry) => entry.reason === 'invalid_window')?.recovery,
+        ).toBe(inRange);
+      },
+    );
+  });
+
+  it('renders NASA rejection facts as plain lines that read back exactly', async () => {
+    status = 422;
+    const result = await settle(runToolContract(getTimeseriesTool, input));
+    const { error } = result.structuredContent as { error: { message: string } };
+    expect(error.message).toBe(
+      `NASA POWER rejected the request.\nstatus: 422\nmessages[0]: ${message}`,
+    );
+    const [errorBlock] = text(result).split('\n\n');
+    expect(markdownText(errorBlock ?? '').replace(/\n$/, '')).toBe(`Error: ${error.message}`);
   });
 
   it('returns empty observations without inventing rows or statistics', async () => {
@@ -1213,7 +1276,7 @@ describe('point tool consumption contracts', () => {
     expect(result.isError).not.toBe(true);
     expect(result.structuredContent).toMatchObject({
       topic,
-      verifiedOn: '2026-10-28',
+      verifiedOn: '2026-11-23',
       entries: expect.any(Array),
     });
     const data = result.structuredContent as {

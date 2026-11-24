@@ -1,9 +1,21 @@
 /** @fileoverview Fixed-origin NASA POWER client with bounded shared pacing/cache. @module services/power/power-service */
 import type { Context, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
-import { createPacer, defaultIsTransient, withRetry } from '@cyanheads/mcp-ts-core/utils';
+import {
+  createPacer,
+  defaultIsTransient,
+  ErrorHandler,
+  withRetry,
+} from '@cyanheads/mcp-ts-core/utils';
 import { getServerConfig, POWER_LIMITS, type ServerConfig } from '../../config/server-config.js';
-import { describePowerError, powerError, REFERENCE_LIMIT_RECOVERY, shapeError } from './errors.js';
+import { normalizeDesignConditions, resolveDesignYears } from './design-conditions.js';
+import {
+  describePowerError,
+  powerError,
+  REFERENCE_LIMIT_RECOVERY,
+  shapeError,
+  windowError,
+} from './errors.js';
 import {
   normalizePoint,
   normalizeRegion,
@@ -14,6 +26,11 @@ import {
 import { TILTED_ALIAS } from './presets.js';
 import {
   type Community,
+  type DesignConditions,
+  DesignConditionsPayloadSchema,
+  type DesignConditionsRequest,
+  DesignConditionsRequestSchema,
+  IndicatorsConfigurationSchema,
   type ParameterDictionary,
   ParameterDictionarySchema,
   type PowerConfiguration,
@@ -47,7 +64,24 @@ export type PowerServiceOptions = {
   now?: () => number;
   config?: ServerConfig;
 };
-type Cached = { value: unknown; fetchedAt: string; expiresAt: number; bytes: number };
+/** Provenance POWER sends only as response headers: the Indicators API's version and sources. */
+type SourceHeaders = { appVersion?: string; dataSources?: string };
+/** A cached body keeps its response headers, so a cache hit reports the same provenance. */
+type Cached = {
+  value: unknown;
+  fetchedAt: string;
+  headers: SourceHeaders;
+  expiresAt: number;
+  bytes: number;
+};
+function sourceHeaders(response: Response): SourceHeaders {
+  const appVersion = response.headers.get('x-app-version');
+  const dataSources = response.headers.get('x-data-sources');
+  return {
+    ...(appVersion !== null && { appVersion }),
+    ...(dataSources !== null && { dataSources }),
+  };
+}
 const origin = 'https://power.larc.nasa.gov';
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   const result = schema.safeParse(value);
@@ -138,7 +172,8 @@ export class PowerService {
     this.cache.set(key, entry);
     return entry;
   }
-  private store(key: string, value: unknown, fetchedAt: string, bytes: number, ttl: number): void {
+  private store(key: string, entry: Omit<Cached, 'expiresAt'>, ttl: number): void {
+    const { value, bytes } = entry;
     const previous = this.cache.get(key);
     if (previous) {
       this.cache.delete(key);
@@ -155,10 +190,9 @@ export class PowerService {
       this.cacheBytes -= oldest[1].bytes;
     }
     this.cache.set(key, {
+      ...entry,
       value: structuredClone(value),
-      fetchedAt,
       expiresAt: this.now() + ttl,
-      bytes,
     });
     this.cacheBytes += bytes;
   }
@@ -277,12 +311,20 @@ export class PowerService {
     ctx: Context,
     budget: PowerCallBudget,
     ttl: number,
-  ): Promise<{ value: T; fetchedAt: string; cacheHit: boolean }> {
+  ): Promise<{ value: T; fetchedAt: string; cacheHit: boolean; headers: SourceHeaders }> {
     this.remaining(budget);
     const key = url.toString();
     const hit = this.cached(key);
     if (hit)
-      return { value: structuredClone(hit.value) as T, fetchedAt: hit.fetchedAt, cacheHit: true };
+      return {
+        value: structuredClone(hit.value) as T,
+        fetchedAt: hit.fetchedAt,
+        cacheHit: true,
+        headers: hit.headers,
+      };
+    const maxRetries = 1;
+    /** The last transient failure withRetry judged, which a retry-exhausted wrapper carries as its cause. */
+    let failure: unknown;
     try {
       return await withRetry(
         ({ signal }) => {
@@ -340,23 +382,28 @@ export class PowerService {
                 throw error;
               }
               const fetchedAt = new Date(this.now()).toISOString();
-              this.store(key, value, fetchedAt, bytes, ttl);
+              const headers = sourceHeaders(response);
+              this.store(key, { value, fetchedAt, headers, bytes }, ttl);
               ctx.log.debug('NASA POWER response received', { bytes, cacheHit: false });
-              return { value, fetchedAt, cacheHit: false };
+              return { value, fetchedAt, cacheHit: false, headers };
             },
             { signal, maxWaitMs: Math.min(POWER_LIMITS.queueWaitMs, this.remaining(budget)) },
           );
         },
         {
-          maxRetries: 1,
+          maxRetries,
           baseDelayMs: 1_000,
           deadlineMs: this.remaining(budget),
           signal: budget.signal,
           operation: 'PowerService.load',
           context: ctx,
-          isTransient: (error) =>
-            !(error instanceof McpError && error.data?.reason === 'upstream_rate_limited') &&
-            defaultIsTransient(error),
+          isTransient: (error) => {
+            failure = error;
+            return (
+              !(error instanceof McpError && error.data?.reason === 'upstream_rate_limited') &&
+              defaultIsTransient(error)
+            );
+          },
         },
       );
     } catch (error) {
@@ -374,13 +421,36 @@ export class PowerService {
         throw powerError('request_queue_full', 'NASA POWER request scheduling capacity is full.', {
           retryAfter: error.data.retryAfter,
         });
-      if (error instanceof McpError && error.data?.operation !== undefined)
+      /** The retry clock and the budget's timeout expire together; either way the call's deadline passed. */
+      if (error instanceof McpError && error.data?.reason === 'retry_deadline_exceeded')
         throw new McpError(
-          error.code,
-          describePowerError(error.message, { operation: error.data.operation }),
-          error.data,
+          JsonRpcErrorCode.Timeout,
+          'NASA POWER call deadline exceeded.',
+          undefined,
           { cause: error },
         );
+      /**
+       * Once retries run out, withRetry wraps the last attempt's failure: it appends "(failed after
+       * N attempts)" to that message, which would land on NASA's own text, adds its internal
+       * `operation` label to an McpError, and records no attempt count on any other error. Rebuild
+       * from that attempt, whatever its type, keeping the code it carries or classifies as, and
+       * state the count as its own fact.
+       */
+      if (
+        failure instanceof Error &&
+        error instanceof Error &&
+        error !== failure &&
+        error.cause === failure
+      ) {
+        /** A wrapper exists only once the last attempt failed. */
+        const retryAttempts = maxRetries + 1;
+        throw new McpError(
+          failure instanceof McpError ? failure.code : ErrorHandler.determineErrorCode(failure),
+          describePowerError(failure.message, { retryAttempts }),
+          { ...(failure instanceof McpError ? failure.data : {}), retryAttempts },
+          { cause: error },
+        );
+      }
       throw error;
     }
   }
@@ -414,30 +484,61 @@ export class PowerService {
       )
     ).value;
   }
+  /**
+   * The window checkable before any request: the product floor through today's UTC date, or
+   * 1981 through the current year. Climatology's real end exists only in its configuration.
+   */
+  private localWindow(resolution: Resolution): { start: string; end: string } {
+    const today = new Date(this.now()).toISOString().slice(0, 10);
+    return resolution === 'daily' || resolution === 'hourly'
+      ? { start: resolution === 'hourly' ? '2001-01-01' : '1981-01-01', end: today }
+      : { start: '1981', end: today.slice(0, 4) };
+  }
   private validateWindow(request: PowerRequest | RegionRequest): void {
-    const current = new Date(this.now()).toISOString().slice(0, 10);
-    const currentYear = Number(current.slice(0, 4));
+    const { start, end } = this.localWindow(request.temporalResolution);
     if (request.temporalResolution === 'daily' || request.temporalResolution === 'hourly') {
-      const floor = request.temporalResolution === 'hourly' ? '2001-01-01' : '1981-01-01';
-      if (
-        request.startDate < floor ||
-        request.endDate < request.startDate ||
-        request.endDate > current
-      )
-        throw powerError(
-          'invalid_window',
-          `Use an ordered ${request.temporalResolution} window from ${floor} through ${current}.`,
+      const reversed = request.endDate < request.startDate;
+      if (reversed || request.startDate < start || request.endDate > end)
+        throw windowError(
+          request.temporalResolution,
+          start,
+          end,
+          reversed ? 'with startDate on or before endDate' : undefined,
         );
-    } else if (request.temporalResolution === 'monthly' || 'latitude' in request) {
+    } else if (request.temporalResolution === 'monthly') {
+      const reversed = request.endYear < request.startYear;
+      if (reversed || request.endYear > Number(end))
+        throw windowError(
+          'monthly',
+          start,
+          end,
+          reversed ? 'with startYear on or before endYear' : undefined,
+        );
+    } else if ('latitude' in request) {
+      if ((request.startYear === undefined) !== (request.endYear === undefined))
+        throw powerError(
+          'invalid_window',
+          'Climatology startYear and endYear must be sent together.',
+          {
+            recovery: {
+              hint: 'Send both startYear and endYear, or omit both to use the source product range.',
+            },
+          },
+        );
+      /** NASA computes a climatology over two or more calendar years and answers 422 below that. */
       if (
-        (request.startYear === undefined) !== (request.endYear === undefined) ||
-        (request.startYear !== undefined &&
-          request.endYear !== undefined &&
-          (request.startYear > request.endYear || request.endYear > currentYear))
+        request.startYear !== undefined &&
+        request.endYear !== undefined &&
+        request.startYear >= request.endYear
       )
         throw powerError(
           'invalid_window',
-          'Supply an ordered year pair within current source coverage.',
+          'Climatology years must span at least two calendar years, with startYear before endYear.',
+          {
+            recovery: {
+              hint: 'Resend with endYear after startYear, or omit both years to use the source product range.',
+            },
+          },
         );
     }
   }
@@ -492,7 +593,15 @@ export class PowerService {
       if (request.parameter === 'PSC' || request.parameter === 'WSC')
         throw powerError(
           'invalid_correction',
-          'Regional requests do not support point corrections.',
+          `Regional requests do not support ${request.parameter}, a point-only correction.`,
+          {
+            recovery: {
+              hint:
+                request.parameter === 'WSC'
+                  ? 'Request WS10M or WS50M for the region, or use nasa_power_get_timeseries or nasa_power_get_climatology with windElevation and windSurface at a point.'
+                  : 'Request PS for the region, or use nasa_power_get_timeseries or nasa_power_get_climatology with siteElevation at a point.',
+            },
+          },
         );
     }
     const codes = requestedParameters(request);
@@ -516,6 +625,35 @@ export class PowerService {
         `NASA POWER lists ${unserved.parameters.join(', ')} for ${request.temporalResolution} but does not serve ${unserved.parameters.length === 1 ? 'it' : 'them'} at that resolution.`,
         { parameters: unserved.parameters, recovery: { hint: unserved.recovery } },
       );
+    /**
+     * Configuration first: its ~0.3 KB body settles the configured window before the dictionary
+     * (up to ~0.6 MB) is read, and every successful call needs both. Only climatology compares its
+     * end with the configuration; the other products end at today or the current month, which the
+     * local check reads without the up-to-a-day lag of a cached configuration.
+     */
+    const settings = (await this.configuration(request.temporalResolution, ctx, budget)).settings;
+    const dates = request.temporalResolution === 'daily' || request.temporalResolution === 'hourly';
+    const configured = (value: string | undefined) => value?.slice(0, dates ? 10 : 4);
+    const product = { start: configured(settings?.start), end: configured(settings?.end) };
+    const requested = dates
+      ? { start: request.startDate, end: request.endDate }
+      : 'startYear' in request && request.startYear !== undefined && request.endYear !== undefined
+        ? { start: String(request.startYear), end: String(request.endYear) }
+        : undefined;
+    if (
+      requested &&
+      ((product.start && requested.start < product.start) ||
+        (request.temporalResolution === 'climatology' &&
+          product.end &&
+          requested.end > product.end))
+    ) {
+      const local = this.localWindow(request.temporalResolution);
+      throw windowError(
+        request.temporalResolution,
+        product.start ?? local.start,
+        product.end ?? local.end,
+      );
+    }
     const dictionary = await this.dictionary(
       request.community,
       request.temporalResolution,
@@ -533,30 +671,6 @@ export class PowerService {
         `Unsupported parameters: ${unsupported.join(', ')}`,
         { parameters: unsupported },
       );
-    const configuration = await this.configuration(request.temporalResolution, ctx, budget);
-    const start = configuration.settings?.start;
-    const end = configuration.settings?.end;
-    if (
-      request.temporalResolution === 'climatology' &&
-      'endYear' in request &&
-      request.endYear !== undefined &&
-      typeof end === 'string' &&
-      request.endYear > Number(end.slice(0, 4))
-    )
-      throw powerError(
-        'invalid_window',
-        'Requested climatology extends beyond the configured product year window.',
-      );
-    if (typeof start === 'string') {
-      const requestedStart =
-        request.temporalResolution === 'daily' || request.temporalResolution === 'hourly'
-          ? request.startDate
-          : !('startYear' in request) || request.startYear === undefined
-            ? undefined
-            : `${request.startYear}-01-01`;
-      if (requestedStart && requestedStart < start.slice(0, 10))
-        throw powerError('invalid_window', 'Requested window begins before this product supports.');
-    }
     return codes;
   }
   private url(request: PowerRequest | RegionRequest, codes: string[]): URL {
@@ -635,7 +749,12 @@ export class PowerService {
     )
       throw powerError(
         'invalid_window',
-        'Regional climatology uses the precomputed source period. Omit startYear and endYear, or use nasa_power_get_climatology for custom years.',
+        'Regional climatology uses the precomputed source period and accepts no year fields.',
+        {
+          recovery: {
+            hint: 'Omit startYear and endYear for the region, or use nasa_power_get_climatology for custom years at a point.',
+          },
+        },
       );
     const request = RegionRequestSchema.parse(input);
     const codes = await this.prepare(request, ctx, budget);
@@ -648,6 +767,53 @@ export class PowerService {
     });
     this.remaining(budget);
     return dataset;
+  }
+  /**
+   * Climatic design conditions at one point from POWER's Indicators API. Omitted years request the
+   * configured coverage explicitly; a window the configuration refuses throws `invalid_window`
+   * before any data request. `units` is never sent: POWER's imperial mode relabels metric values.
+   */
+  async designConditions(
+    input: DesignConditionsRequest,
+    ctx: Context,
+    budget = this.createCallBudget(ctx),
+  ): Promise<DesignConditions> {
+    const request = DesignConditionsRequestSchema.parse(input);
+    const configuration = await this.load(
+      new URL('/api/application/indicators/configuration', origin),
+      IndicatorsConfigurationSchema,
+      ctx,
+      budget,
+      POWER_LIMITS.referenceTtlMs,
+    );
+    const years = resolveDesignYears(request, configuration.value);
+    const url = new URL('/api/application/indicators/point', origin);
+    url.search = new URLSearchParams({
+      latitude: String(request.latitude),
+      longitude: String(request.longitude),
+      start: String(years.startYear),
+      end: String(years.endYear),
+      format: 'JSON',
+    }).toString();
+    const result = await this.load(
+      url,
+      DesignConditionsPayloadSchema,
+      ctx,
+      budget,
+      POWER_LIMITS.dataTtlMs,
+    );
+    const conditions = normalizeDesignConditions(
+      result.value,
+      { latitude: request.latitude, longitude: request.longitude, ...years },
+      {
+        endpointUrl: url.toString(),
+        fetchedAt: result.fetchedAt,
+        cacheHit: result.cacheHit,
+        ...result.headers,
+      },
+    );
+    this.remaining(budget);
+    return conditions;
   }
 }
 /** Factory for an injected service instance. */

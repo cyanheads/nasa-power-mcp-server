@@ -42,10 +42,6 @@ const definitions = {
     JsonRpcErrorCode.NotFound,
     'Use nasa_power_dataframe_describe with the same canvas_id to inspect active tables, or rerun the producing tool.',
   ],
-  query_limit: [
-    JsonRpcErrorCode.ValidationError,
-    'Reduce SQL length or narrow the SELECT projection and row limit, then retry nasa_power_dataframe_query.',
-  ],
 } as const;
 /** Workspace failure reasons the canvas service raises. */
 export type CanvasErrorReason = keyof typeof definitions;
@@ -53,7 +49,8 @@ export type CanvasErrorReason = keyof typeof definitions;
  * Create a classified failure without engine paths or private context. Supplied `data` is
  * rendered into the message too, so `content[]` carries the same facts as `error.data`. A
  * `calls` list of re-sendable request changes renders one JSON line per call, every field it
- * changes included, so a split of a hundred calls stays a hundred lines.
+ * changes included, so a split of a hundred calls stays a hundred lines. Each call's JSON is a
+ * literal, so `content[]` shows it as a code span a caller can copy without escapes.
  */
 export function canvasError(
   reason: CanvasErrorReason,
@@ -64,15 +61,21 @@ export function canvasError(
   const [code, hint] = definitions[reason];
   const { calls, ...rest } = data;
   const described = describePowerError(message, rest);
-  const text = Array.isArray(calls)
-    ? `${described}\n\n${calls.length ? calls.map((call, index) => `calls[${index}]: ${JSON.stringify(call)}`).join('\n') : 'calls: []'}`
+  const literals = Array.isArray(calls) ? calls.map((call) => JSON.stringify(call)) : undefined;
+  const text = literals
+    ? `${described}\n${literals.length ? literals.map((call, index) => `calls[${index}]: ${call}`).join('\n') : 'calls: []'}`
     : described;
-  const error = new McpError(code, text, {
-    ...data,
-    reason,
-    recovery: { hint: recovery ?? hint },
-    ...(code === JsonRpcErrorCode.RateLimited ? { retryable: true } : {}),
-  });
+  const error = new McpError(
+    code,
+    text,
+    {
+      ...data,
+      reason,
+      recovery: { hint: recovery ?? hint },
+      ...(code === JsonRpcErrorCode.RateLimited ? { retryable: true } : {}),
+    },
+    literals && { literals },
+  );
   serviceErrors.add(error);
   return error;
 }

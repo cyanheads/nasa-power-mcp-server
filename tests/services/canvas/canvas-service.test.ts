@@ -170,20 +170,81 @@ describe('CanvasService with DuckDB', () => {
       truncated: false,
       countSemantics: 'exact',
     });
-    for (const rowLimit of [0, -1, 1.5])
-      await expect(
-        fixture.service.query(handle.canvas_id, { sql: 'SELECT 1', rowLimit }, fixture.ctx),
-      ).rejects.toMatchObject({ data: { reason: 'query_limit' } });
+    const all = await fixture.service.query(
+      handle.canvas_id,
+      { sql: `SELECT * FROM ${handle.table} ORDER BY CAST(periodKey AS INTEGER)`, rowLimit: 1000 },
+      fixture.ctx,
+    );
+    expect(all).toMatchObject({
+      rowCount: 400,
+      shownCount: 400,
+      truncated: false,
+      countSemantics: 'exact',
+    });
+    expect(all.rows).toEqual(dataset().rows);
+  });
+  it('passes the caller signal to the native describe, which rejects as cancelled', async () => {
+    const handle = (await stage()).dataset!;
+    const controller = new AbortController();
+    const describe = fixture.provider.describe.bind(fixture.provider);
+    vi.spyOn(fixture.provider, 'describe').mockImplementationOnce(async (...args) => {
+      controller.abort();
+      return describe(...args);
+    });
     await expect(
-      fixture.service.query(handle.canvas_id, { sql: ' '.repeat(16385) }, fixture.ctx),
-    ).rejects.toMatchObject({ data: { reason: 'query_limit' } });
+      fixture.service.describe(handle.canvas_id, {}, { ...fixture.ctx, signal: controller.signal }),
+    ).rejects.toMatchObject({ data: { reason: 'cancelled' } });
+  });
+  it('stops a whole-canvas describe between tables once the caller aborts', async () => {
+    const handle = (await stage()).dataset!;
+    await fixture.service.present(dataset(), handle.canvas_id, fixture.ctx, source);
+    const controller = new AbortController();
+    const get = fixture.storage.get.bind(fixture.storage);
+    /** Every provenance read completes, as one already under way does; the first aborts the caller. */
+    const read = vi.spyOn(fixture.storage, 'get').mockImplementation(async (key, context) => {
+      const provenance = await get(key, context);
+      controller.abort();
+      return provenance;
+    });
     await expect(
-      fixture.service.query(
-        handle.canvas_id,
-        { sql: `SELECT * FROM ${handle.table}`, rowLimit: 1000 },
-        fixture.ctx,
-      ),
-    ).rejects.toMatchObject({ data: { reason: 'query_limit' } });
+      fixture.service.describe(handle.canvas_id, {}, { ...fixture.ctx, signal: controller.signal }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+  it('aborts a query still running at the query deadline', async () => {
+    const handle = (await stage()).dataset!;
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      /** `AbortSignal.timeout` runs on the real clock; this one fires on the fake clock instead. */
+      vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms) => {
+        const controller = new AbortController();
+        setTimeout(
+          () => controller.abort(new DOMException('The operation timed out.', 'TimeoutError')),
+          ms,
+        );
+        return controller.signal;
+      });
+      const query = fixture.provider.query.bind(fixture.provider);
+      const reached = Promise.withResolvers<AbortSignal | undefined>();
+      /** A native query that runs until its signal aborts, then ends as the engine ends one. */
+      vi.spyOn(fixture.provider, 'query').mockImplementationOnce(async (...args) => {
+        const signal = args[3]?.signal;
+        reached.resolve(signal);
+        await new Promise((resolve) => signal?.addEventListener('abort', resolve, { once: true }));
+        return query(...args);
+      });
+      const outcome = fixture.service
+        .query(handle.canvas_id, { sql: `SELECT T2M FROM ${handle.table}` }, fixture.ctx)
+        .catch((error: unknown) => error);
+      const signal = await reached.promise;
+      await vi.advanceTimersByTimeAsync(POWER_LIMITS.queryMs - 1);
+      expect(signal?.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(signal?.aborted).toBe(true);
+      expect(await outcome).toMatchObject({ data: { reason: 'cancelled' } });
+    } finally {
+      vi.useRealTimers();
+    }
   });
   it.each([
     ['SELECT FROM', 'invalid_sql'],
@@ -194,7 +255,7 @@ describe('CanvasService with DuckDB', () => {
     ['SELECT * FROM information_schema.tables', 'system_catalog_access'],
     ["SELECT current_setting('memory_limit')", 'denied_function'],
     ["SELECT * FROM read_csv('/etc/passwd')", 'denied_function'],
-    ["SELECT * FROM '/etc/passwd'", 'missing_table'],
+    ["SELECT * FROM '/etc/passwd'", 'sql_read_only'],
     ['SELECT CAST(ORT AS INTEGER) FROM TABLE_NAME WHERE ORT IS NOT NULL', 'sql_execution_error'],
   ])('classifies unsafe or invalid SQL: %s', async (sql, reason) => {
     const handle = (await stage()).dataset!;
@@ -305,7 +366,7 @@ describe('CanvasService with DuckDB', () => {
         .present(dataset(), undefined, fixture.ctx, source)
         .catch((error: McpError) => error);
       expect(refusal).toMatchObject({ data: { reason: 'canvas_required', calls: [] } });
-      expect((refusal as McpError).message).toMatch(/\n\ninlineRows: \d+\n\ncalls: \[\]$/);
+      expect((refusal as McpError).message).toMatch(/\ninlineRows: \d+\ncalls: \[\]$/);
       await expect(service.describe('abcdefghij', {}, fixture.ctx)).rejects.toMatchObject({
         data: { reason: 'canvas_unavailable' },
       });

@@ -326,6 +326,7 @@ function comparison(sites: number) {
   return {
     request: { temporalResolution: 'climatology', locations },
     metadata: { endpointUrls: ids.map((id) => `https://example.com/${id}`) },
+    parameters: [{ code: 'T2M' }],
     locations: ids.map((locationId) => ({
       locationId,
       metadata: { endpointUrl: `https://example.com/${locationId}` },
@@ -353,6 +354,52 @@ describe('comparisonSplit', () => {
 
   it('never offers a single-site group, so five sites whose pairs do not fit have no split', () => {
     expect(comparisonSplit(comparison(5))(rowsAtMost(30))).toEqual({ inlineRows: 30, calls: [] });
+  });
+
+  it('sizes each re-sent part of a deferred comparison without deferredLocations, as that call returns', () => {
+    const dataset = {
+      ...comparison(5),
+      deferredLocations: [{ latitude: 9, longitude: 9, label: 'site 9' }],
+    };
+    const seen: object[] = [];
+    const fits = (output: object) => {
+      seen.push(output);
+      return rowsAtMost(40)(output);
+    };
+    expect(comparisonSplit(dataset)(fits).calls).toHaveLength(2);
+    expect(seen.length).toBeGreaterThan(0);
+    for (const output of seen) expect(output).not.toHaveProperty('deferredLocations');
+  });
+
+  it("keeps one shared-grid-cell entry per location set, limited to each part's own sites", () => {
+    const dataset = {
+      ...comparison(5),
+      parameters: [{ code: 'RH2M' }, { code: 'T2M' }, { code: 'PS' }],
+      possibleSharedGridCell: [
+        { parameters: ['RH2M'], locations: ['location_1', 'location_2'] },
+        { parameters: ['T2M'], locations: ['location_1', 'location_2', 'location_3'] },
+        { parameters: ['PS'], locations: ['location_4', 'location_5'] },
+      ],
+    };
+    const seen: { rows: ObservationRow[]; possibleSharedGridCell: unknown }[] = [];
+    const fits = (output: object) => {
+      seen.push(output as (typeof seen)[number]);
+      return rowsAtMost(40)(output);
+    };
+    expect(comparisonSplit(dataset)(fits).calls).toEqual([
+      { locations: dataset.request.locations.slice(0, 2) },
+      { locations: dataset.request.locations.slice(2) },
+    ]);
+    const part = (first: string) =>
+      seen.findLast((output) => output.rows.length && output.rows[0]?.locationId === first);
+    /** Within sites 1–2, RH2M and T2M select the same set, so they merge in response order. */
+    expect(part('location_1')?.possibleSharedGridCell).toEqual([
+      { parameters: ['RH2M', 'T2M'], locations: ['location_1', 'location_2'] },
+    ]);
+    /** Site 3 alone no longer shares T2M with anyone in its part. */
+    expect(part('location_3')?.possibleSharedGridCell).toEqual([
+      { parameters: ['PS'], locations: ['location_4', 'location_5'] },
+    ]);
   });
 });
 

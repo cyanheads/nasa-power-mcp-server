@@ -3,7 +3,7 @@ import { tool, z } from '@cyanheads/mcp-ts-core';
 import { CanvasIdSchema } from '@cyanheads/mcp-ts-core/canvas';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { formatFaithfully } from '@/services/canvas/format.js';
-import { PowerRequestSchema } from '@/services/power/index.js';
+import { PowerRequestSchema, RECOVERIES } from '@/services/power/index.js';
 import { PointOutputSchema, presentPoint } from './point-contracts.js';
 /** Retrieve source observations with complete scientific provenance. */
 export const getTimeseriesTool = tool('nasa_power_get_timeseries', {
@@ -50,8 +50,7 @@ export const getTimeseriesTool = tool('nasa_power_get_timeseries', {
       reason: 'invalid_window',
       code: JsonRpcErrorCode.ValidationError,
       when: 'Window is reversed, impossible or outside source coverage',
-      recovery:
-        'Use nasa_power_list_reference topic coverage and send an ordered window within the supported period.',
+      recovery: RECOVERIES.invalid_window,
       thrownBy: 'service',
     },
     {

@@ -1,5 +1,6 @@
 /** @fileoverview POWER classified failures and recoveries. @module services/power/errors */
 import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
+import type { Resolution } from './types.js';
 
 /** Reference bodies are fetched whole, independent of observation inputs or local pagination. */
 export const REFERENCE_LIMIT_RECOVERY =
@@ -11,8 +12,7 @@ export const RECOVERIES = {
     'Use nasa_power_search_parameters with the same community and temporalResolution to choose supported parameter codes.',
   unsupported_preset:
     'Use nasa_power_list_reference topic presets to choose a preset supported at this temporal resolution.',
-  invalid_window:
-    'Use nasa_power_list_reference topic coverage and send an ordered window within the supported period.',
+  invalid_window: 'Resend the request with dates or years inside the range this error states.',
   invalid_region:
     'Send ordered bounds spanning 2 to 10 degrees per axis; split antimeridian regions into separate calls.',
   invalid_correction:
@@ -25,16 +25,16 @@ export const RECOVERIES = {
   dataset_limit:
     'Narrow the date window, region, selected parameters, or location count and retry the producing tool.',
 } as const;
-/** Render client-actionable error data without flattening source strings or interpreting their markup. */
+/**
+ * Append client-actionable error data to `message`, one `path: value` line per fact. Values keep
+ * their own line breaks and markup: the framework escapes the whole message for `content[]`, so a
+ * CommonMark parse reads it back exactly. Keys the framework renders itself are skipped, except
+ * `retryAfter`, which a comparison's `failed[].message` copy would otherwise lose.
+ */
 export function describePowerError(message: string, data: Record<string, unknown>): string {
   const lines: string[] = [];
   const visit = (value: unknown, path: string): void => {
-    if (typeof value === 'string') {
-      const fence = '`'.repeat(
-        Math.max(3, ...[...value.matchAll(/`+/g)].map((match) => match[0].length + 1)),
-      );
-      lines.push(`${path}:\n${fence}\n${value}\n${fence}`);
-    } else if (Array.isArray(value)) {
+    if (Array.isArray(value)) {
       if (!value.length) lines.push(`${path}: []`);
       for (const [index, entry] of value.entries()) visit(entry, `${path}[${index}]`);
     } else if (value !== null && typeof value === 'object') {
@@ -46,7 +46,24 @@ export function describePowerError(message: string, data: Record<string, unknown
   for (const [key, value] of Object.entries(data)) {
     if (!['reason', 'retryable', 'recovery', 'requestId'].includes(key)) visit(value, key);
   }
-  return lines.length ? `${message}\n\n${lines.join('\n\n')}` : message;
+  return lines.length ? `${message}\n${lines.join('\n')}` : message;
+}
+/**
+ * A window refusal stating the range in force: `<Product> <dates|years> must fall within <start>
+ * to <end>.`, with the ordering `rule` appended when that is what failed.
+ */
+export function windowError(
+  resolution: Resolution,
+  start: string,
+  end: string,
+  rule?: string,
+): McpError {
+  const product = `${resolution[0]?.toUpperCase()}${resolution.slice(1)}`;
+  const unit = resolution === 'daily' || resolution === 'hourly' ? 'dates' : 'years';
+  return powerError(
+    'invalid_window',
+    `${product} ${unit} must fall within ${start} to ${end}${rule ? `, ${rule}` : ''}.`,
+  );
 }
 /** Create an advertised service failure. */
 export function powerError(

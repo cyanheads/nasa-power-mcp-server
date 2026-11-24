@@ -20,14 +20,6 @@ export const dataframeDescribeTool = tool('nasa_power_dataframe_describe', {
   output: DescribeResultSchema,
   errors: [
     {
-      reason: 'query_limit',
-      code: JsonRpcErrorCode.ValidationError,
-      when: 'Complete table provenance exceeds the structured or rendered response budget',
-      recovery:
-        'Specify one table with nasa_power_dataframe_describe, or narrow the request to the producing tool and stage a smaller dataset.',
-      thrownBy: 'service',
-    },
-    {
       reason: 'canvas_unavailable',
       code: JsonRpcErrorCode.ConfigurationError,
       when: 'Analytical workspace is disabled or native support is unavailable',

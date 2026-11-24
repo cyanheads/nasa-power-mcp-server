@@ -9,7 +9,7 @@ import { getCanvasService, QueryResultSchema } from '@/services/canvas/index.js'
 export const dataframeQueryTool = tool('nasa_power_dataframe_query', {
   title: 'Query staged POWER observations',
   description:
-    'Run one read-only SELECT over tables in an explicitly supplied canvas_id. Inspect names and units with nasa_power_dataframe_describe. External files, imports, writes and system catalogs are refused. Returns at most 1,000 rows and 40,000 JSON characters; truncated rowCount counts only materialized rows.',
+    'Run one read-only SELECT over tables in an explicitly supplied canvas_id. Inspect names and units with nasa_power_dataframe_describe. External files, imports, writes and system catalogs are refused. Returns at most rowLimit rows, capped at 1,000; truncated rowCount counts only materialized rows.',
   annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   input: z.object({
     canvas_id: CanvasIdSchema.describe('Canvas token returned by a producing POWER tool'),
@@ -127,14 +127,6 @@ export const dataframeQueryTool = tool('nasa_power_dataframe_query', {
       when: 'SQL plan uses an unavailable operator',
       recovery:
         'Send one read-only SELECT against tables shown by nasa_power_dataframe_describe; remove external data and system catalog access.',
-      thrownBy: 'service',
-    },
-    {
-      reason: 'query_limit',
-      code: JsonRpcErrorCode.ValidationError,
-      when: 'SQL length or projected values exceed the response budget',
-      recovery:
-        'Reduce SQL length or narrow the SELECT projection and row limit, then retry nasa_power_dataframe_query.',
       thrownBy: 'service',
     },
   ],

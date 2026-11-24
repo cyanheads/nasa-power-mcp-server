@@ -3,13 +3,17 @@ import { tool } from '@cyanheads/mcp-ts-core';
 import { CanvasIdSchema } from '@cyanheads/mcp-ts-core/canvas';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { formatFaithfully } from '@/services/canvas/format.js';
-import { NormalizedClimatologyRequestSchema, PowerRequestSchema } from '@/services/power/index.js';
+import {
+  NormalizedClimatologyRequestSchema,
+  PowerRequestSchema,
+  RECOVERIES,
+} from '@/services/power/index.js';
 import { PointOutputSchema, presentPoint } from './point-contracts.js';
 /** Retrieve source observations with complete scientific provenance. */
 export const getClimatologyTool = tool('nasa_power_get_climatology', {
   title: 'Get NASA POWER climatology',
   description:
-    'Retrieve complete monthly and annual climatology at latitude/longitude. Optionally supply both startYear and endYear; omitted years use the source product range. Use nasa_power_list_reference for presets and tilted solar aliases. Small profiles remain inline; larger profiles return a complete table handle and bounded preview, preserving orientation text. Oversized summaries stage as summaryDataset with exact summaryCount, queried in summaryIndex order. Supply canvas_id to reuse a returned workspace.',
+    'Retrieve complete monthly and annual climatology at latitude/longitude. Optionally supply both startYear and endYear, covering at least two calendar years; omitted years use the source product range. Use nasa_power_list_reference for presets and tilted solar aliases. Small profiles remain inline; larger profiles return a complete table handle and bounded preview, preserving orientation text. Oversized summaries stage as summaryDataset with exact summaryCount, queried in summaryIndex order. Supply canvas_id to reuse a returned workspace.',
   annotations: { readOnlyHint: true, openWorldHint: true },
   input: PowerRequestSchema.options[3].omit({ temporalResolution: true }).extend({
     canvas_id: CanvasIdSchema.optional().describe(
@@ -57,9 +61,8 @@ export const getClimatologyTool = tool('nasa_power_get_climatology', {
     {
       reason: 'invalid_window',
       code: JsonRpcErrorCode.ValidationError,
-      when: 'Window is reversed, impossible or outside source coverage',
-      recovery:
-        'Use nasa_power_list_reference topic coverage and send an ordered window within the supported period.',
+      when: 'Years are unpaired, span under two calendar years or fall outside source coverage',
+      recovery: RECOVERIES.invalid_window,
       thrownBy: 'service',
     },
     {
