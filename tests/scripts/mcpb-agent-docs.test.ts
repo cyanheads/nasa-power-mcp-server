@@ -22,7 +22,7 @@ const keptEntries = [
   'node_modules/@modelcontextprotocol/core/dist/ext/skills/index.mjs',
   'node_modules/@cyanheads/mcp-ts-core/node_modules/@modelcontextprotocol/server/dist/ext/skills/index.mjs',
   'node_modules/some-pkg/lib/skills/loader.js',
-  'node_modules/some-pkg/docs/SKILL.md',
+  'node_modules/some-pkg/docs/AGENTS.md',
   'node_modules/@scope/skills/index.js',
   'dist/index.js',
   'skills/nasa-power-guide/SKILL.md',
@@ -35,6 +35,9 @@ const agentDocEntries = [
   'node_modules/some-pkg/.claude/settings.json',
   'node_modules/@scope/pkg/.agents/skills/guide/SKILL.md',
   'node_modules/some-pkg/SKILL.md',
+  'node_modules/some-pkg/docs/SKILL.md',
+  'node_modules/some-pkg/AGENTS.md',
+  'node_modules/@scope/pkg/CLAUDE.md',
   'node_modules/outer/node_modules/inner/skills/guide/SKILL.md',
   'node_modules/@a/outer/node_modules/@b/inner/framework-skills/x/SKILL.md',
 ];

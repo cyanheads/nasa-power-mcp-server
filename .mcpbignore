@@ -24,6 +24,7 @@
 /coverage/
 /logs/
 /.cache/
+/node_modules/.vitest-cache/
 /.github/
 /.vscode/
 /.claude-plugin/
